@@ -181,19 +181,35 @@ public class AdminController {
     }
 
     @DeleteMapping("/candidates/{id}")
-    public ResponseEntity<Void> deleteCandidate(@PathVariable("id") Long id) {
-        boolean ok = adminService.hardDeleteUser(id);
-        if (!ok) return ResponseEntity.notFound().build();
-        logger.info("Hard-deleted candidate with id {}", id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<?> deleteCandidate(@PathVariable("id") Long id) {
+        try {
+            boolean ok = adminService.hardDeleteUser(id);
+            if (!ok) return ResponseEntity.notFound().build();
+            logger.info("Hard-deleted candidate with id {}", id);
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            logger.error("Failed to hard-delete candidate with id {}", id, e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "message", "Failed to delete candidate",
+                    "error", e.getMessage() != null ? e.getMessage() : "Unknown error"
+            ));
+        }
     }
 
     @DeleteMapping("/recruiters/{id}")
-    public ResponseEntity<Void> deleteRecruiter(@PathVariable("id") Long id) {
-        boolean ok = adminService.hardDeleteUser(id);
-        if (!ok) return ResponseEntity.notFound().build();
-        logger.info("Hard-deleted recruiter with id {}", id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<?> deleteRecruiter(@PathVariable("id") Long id) {
+        try {
+            boolean ok = adminService.hardDeleteUser(id);
+            if (!ok) return ResponseEntity.notFound().build();
+            logger.info("Hard-deleted recruiter with id {}", id);
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            logger.error("Failed to hard-delete recruiter with id {}", id, e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "message", "Failed to delete recruiter",
+                    "error", e.getMessage() != null ? e.getMessage() : "Unknown error"
+            ));
+        }
     }
 
     // Pending recruiters overview for Requests and sidebar count

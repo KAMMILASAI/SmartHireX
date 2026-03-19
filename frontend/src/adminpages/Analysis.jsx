@@ -93,11 +93,11 @@ export default function Analysis() {
       });
       
       // Remove user from all relevant states
-      setAllUsers(prev => prev.filter(user => user._id !== userId));
+      setAllUsers(prev => prev.filter(user => (user.id ?? user._id) !== userId));
       if (userType === 'candidate') {
-        setCandidates(prev => prev.filter(user => user._id !== userId));
+        setCandidates(prev => prev.filter(user => (user.id ?? user._id) !== userId));
       } else {
-        setRecruiters(prev => prev.filter(user => user._id !== userId));
+        setRecruiters(prev => prev.filter(user => (user.id ?? user._id) !== userId));
       }
       
       // Update stats
@@ -111,7 +111,8 @@ export default function Analysis() {
       alert(`${userType.charAt(0).toUpperCase() + userType.slice(1)} deleted successfully!`);
     } catch (err) {
       console.error('Delete error:', err);
-      alert(`Failed to delete ${userType}. Please try again.`);
+      const apiError = err.response?.data?.error || err.response?.data?.message;
+      alert(apiError ? `Failed to delete ${userType}: ${apiError}` : `Failed to delete ${userType}. Please try again.`);
     }
     setDeleteLoading(null);
   };
@@ -256,21 +257,26 @@ export default function Analysis() {
         ) : (
           <div className="user-cards-grid">
             {displayUsers.map((user, index) => (
-              <div key={user._id} className="user-card" style={{
+              <div key={user.id ?? user._id} className="user-card" style={{
                 background: `linear-gradient(135deg, ${getGradientColors(index)[0]} 0%, ${getGradientColors(index)[1]} 100%)`
               }}>
+                {(() => {
+                  const userId = user.id ?? user._id;
+                  return (
                 <button
                   className="delete-btn"
-                  onClick={() => handleDeleteUser(user._id, user.name || `${user.firstName} ${user.lastName}`, user.userType)}
-                  disabled={deleteLoading === user._id}
+                  onClick={() => handleDeleteUser(userId, user.name || `${user.firstName} ${user.lastName}`, user.userType)}
+                  disabled={deleteLoading === userId}
                   title="Delete User"
                 >
-                  {deleteLoading === user._id ? (
+                  {deleteLoading === userId ? (
                     <div className="delete-spinner"></div>
                   ) : (
                     <FiTrash2 />
                   )}
                 </button>
+                  );
+                })()}
 
                 <div className="user-avatar">
                   {user.image ? (

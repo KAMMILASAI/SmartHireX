@@ -129,7 +129,7 @@ const Register = ({ embedded = false, onSuccess, onSwitchToLogin }) => {
       const res = await axios.post(`${API_BASE_URL}/auth/send-registration-otp`, { 
         email: email.trim().toLowerCase(),
         name: firstName ? firstName.trim() : 'User'
-      }, { timeout: 10000 });
+      }, { timeout: 45000 });
       
       console.log('OTP Response:', res.status, res.data);
       
@@ -143,6 +143,12 @@ const Register = ({ embedded = false, onSuccess, onSwitchToLogin }) => {
         setError(msg);
       }
     } catch (err) {
+      if (err.code === 'ECONNABORTED') {
+        const msg = 'Server is taking longer to respond (Render cold start). Please wait 30-60 seconds and try again.';
+        showError(msg);
+        setError(msg);
+        return;
+      }
       const errorMessage = err.response?.data?.message || 
                          err.response?.data?.error || 
                          'Failed to send OTP. Please try again.';
@@ -171,7 +177,7 @@ const Register = ({ embedded = false, onSuccess, onSwitchToLogin }) => {
       const res = await axios.post(`${API_BASE_URL}/auth/verify-registration-otp`, { 
         email: email.trim().toLowerCase(),
         otp
-      });
+      }, { timeout: 30000 });
       
       if (res.data.message === 'OTP verified successfully' || res.data.success) {
         showSuccess('Email verified successfully!');
@@ -181,6 +187,10 @@ const Register = ({ embedded = false, onSuccess, onSwitchToLogin }) => {
         setError(res.data.message || 'Invalid OTP. Please try again.');
       }
     } catch (err) {
+      if (err.code === 'ECONNABORTED') {
+        setError('Server response timed out. Please try OTP verification again.');
+        return;
+      }
       const errorMessage = err.response?.data?.message || 
                          err.response?.data?.error || 
                          'Failed to verify OTP. Please try again.';
@@ -290,7 +300,8 @@ const Register = ({ embedded = false, onSuccess, onSwitchToLogin }) => {
       const res = await axios.post(`${API_BASE_URL}/auth/register`, userData, {
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 30000
       });
       
       console.log('Registration response:', res.data);

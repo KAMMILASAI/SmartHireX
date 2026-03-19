@@ -64,13 +64,19 @@ public class OTPServiceImpl implements OTPService {
 
             // Send OTP via email
             logger.info("Attempting to send OTP email to: {}", normalizedEmail);
-            emailService.sendOtpEmail(normalizedEmail, otpCode, userName != null ? userName : "User");
+            try {
+                emailService.sendOtpEmail(normalizedEmail, otpCode, userName != null ? userName : "User");
+            } catch (Exception mailError) {
+                // Roll back saved OTP if delivery failed, so users are not blocked by stale OTP records.
+                otpRepository.delete(savedOtp);
+                throw new RuntimeException("Unable to deliver OTP email. Please verify mail settings and try again.", mailError);
+            }
             logger.info("OTP generated and sent successfully for email: {} and type: {}", normalizedEmail, type);
             return "OTP sent successfully to your email";
             
         } catch (Exception e) {
             logger.error("Failed to generate and send OTP for email: {} and type: {}", email, type, e);
-            throw new RuntimeException("Failed to send OTP email: " + e.getMessage());
+            throw new RuntimeException(e.getMessage());
         }
     }
 

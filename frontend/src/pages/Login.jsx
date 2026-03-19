@@ -261,7 +261,8 @@ const Login = ({ embedded = false, onSuccess, onSwitchToRegister }) => {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        withCredentials: true
+        withCredentials: true,
+        timeout: 30000
       });
       
       console.log('Login response status:', response.status);
@@ -303,6 +304,8 @@ const Login = ({ embedded = false, onSuccess, onSwitchToRegister }) => {
         } else {
           setError(`Error: ${status} - ${data.message || 'An error occurred'}`);
         }
+      } else if (error.code === 'ECONNABORTED') {
+        setError('Server is waking up (Render cold start). Please wait a few seconds and try again.');
       } else if (error.request) {
         // The request was made but no response was received
         setError('Unable to connect to the server. Please check your internet connection.');

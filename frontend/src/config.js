@@ -2,7 +2,7 @@
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 export const API_BASE_URL = configuredApiBaseUrl && configuredApiBaseUrl.trim().length > 0
   ? configuredApiBaseUrl.trim()
-  : 'http://localhost:8080/api';
+  : 'https://smarthirex-vdsn.onrender.com/api';
 
 // Helper function to get auth headers
 export const getAuthHeaders = () => ({

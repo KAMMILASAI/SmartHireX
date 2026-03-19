@@ -1,5 +1,9 @@
 package com.SmartHireX.security.oauth2;
 
+import java.io.IOException;
+import java.net.URI;
+import java.util.Optional;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.Authentication;
@@ -14,18 +18,13 @@ import com.SmartHireX.exception.BadRequestException;
 import com.SmartHireX.repository.UserRepository;
 import com.SmartHireX.security.JwtTokenProvider;
 import com.SmartHireX.security.UserPrincipal;
+import static com.SmartHireX.security.oauth2.HttpCookieOAuth2AuthorizationRequestRepository.REDIRECT_URI_PARAM_COOKIE_NAME;
 import com.SmartHireX.util.CookieUtils;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-
-import static com.SmartHireX.security.oauth2.HttpCookieOAuth2AuthorizationRequestRepository.REDIRECT_URI_PARAM_COOKIE_NAME;
-
-import java.io.IOException;
-import java.net.URI;
-import java.util.Optional;
 
 @Component
 public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
@@ -67,7 +66,10 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
             throw new BadRequestException("Sorry! We've got an Unauthorized Redirect URI and can't proceed with the authentication");
         }
 
-        String targetUrl = redirectUri.orElse("http://localhost:5173/");
+        String defaultTargetUrl = oAuth2Properties.getAuthorizedRedirectUris().stream()
+            .findFirst()
+            .orElse("https://smarthirex.netlify.app/oauth2/redirect");
+        String targetUrl = redirectUri.orElse(defaultTargetUrl);
         UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
         
         // Get user details from database - user should exist after CustomOAuth2UserService processing

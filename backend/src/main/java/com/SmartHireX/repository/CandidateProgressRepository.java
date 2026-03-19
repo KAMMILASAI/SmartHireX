@@ -1,14 +1,15 @@
 package com.SmartHireX.repository;
 
-import com.SmartHireX.entity.CandidateProgress;
-import com.SmartHireX.entity.CandidateProgress.ProgressStatus;
+import java.util.List;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Optional;
+import com.SmartHireX.entity.CandidateProgress;
+import com.SmartHireX.entity.CandidateProgress.ProgressStatus;
 
 @Repository
 public interface CandidateProgressRepository extends JpaRepository<CandidateProgress, Long> {
@@ -44,6 +45,8 @@ public interface CandidateProgressRepository extends JpaRepository<CandidateProg
     List<CandidateProgress> findCandidatesForProgression(@Param("jobId") Long jobId, 
                                                         @Param("status") ProgressStatus status, 
                                                         @Param("currentRound") Integer currentRound);
+
+    void deleteByApplicationId(Long applicationId);
 
     void deleteByJobId(Long jobId);
 }

@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 export default function Users() {
   const navigate = useNavigate();
   const API_ORIGIN = API_BASE_URL.replace(/\/api\/?$/, '');
+  const toIdString = (value) => String(value);
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'candidates' | 'recruiters'
   const [query, setQuery] = useState('');
   const [candidates, setCandidates] = useState([]);
@@ -34,19 +35,30 @@ export default function Users() {
 
   const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
 
+  const getApiError = (e, fallback) => {
+    const message = e?.response?.data?.message;
+    const detail = e?.response?.data?.error;
+    if (message && detail) return `${message}: ${detail}`;
+    return message || detail || fallback;
+  };
+
+  const fetchUsers = async () => {
+    const token = localStorage.getItem('token');
+    const headers = { Authorization: `Bearer ${token}` };
+    const [candRes, recRes] = await Promise.all([
+      axios.get(`${API_BASE_URL}/admin/candidates`, { headers }),
+      axios.get(`${API_BASE_URL}/admin/recruiters`, { headers })
+    ]);
+    setCandidates(Array.isArray(candRes.data) ? candRes.data : []);
+    setRecruiters(Array.isArray(recRes.data) ? recRes.data : []);
+  };
+
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
       setError(null);
       try {
-        const token = localStorage.getItem('token');
-        const headers = { Authorization: `Bearer ${token}` };
-        const [candRes, recRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/admin/candidates`, { headers }),
-          axios.get(`${API_BASE_URL}/admin/recruiters`, { headers })
-        ]);
-        setCandidates(Array.isArray(candRes.data) ? candRes.data : []);
-        setRecruiters(Array.isArray(recRes.data) ? recRes.data : []);
+        await fetchUsers();
       } catch (e) {
         setError('Failed to load users');
         showError('Failed to load users data.');
@@ -71,10 +83,10 @@ export default function Users() {
           await axios.delete(`${API_BASE_URL}/admin/candidates/${id}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
-          setCandidates(prev => prev.filter(u => (u._id ?? u.id) !== id));
+          setCandidates(prev => prev.filter(u => toIdString(u._id ?? u.id) !== toIdString(id)));
           showSuccess('Candidate deleted successfully');
         } catch (e) {
-          showError(e.response?.data?.message || 'Failed to delete candidate');
+          showError(getApiError(e, 'Failed to delete candidate'));
         }
         setDeleteLoading(null);
       }
@@ -96,10 +108,10 @@ export default function Users() {
           await axios.delete(`${API_BASE_URL}/admin/recruiters/${id}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
-          setRecruiters(prev => prev.filter(u => (u._id ?? u.id) !== id));
+          setRecruiters(prev => prev.filter(u => toIdString(u._id ?? u.id) !== toIdString(id)));
           showSuccess('Recruiter deleted successfully');
         } catch (e) {
-          showError(e.response?.data?.message || 'Failed to delete recruiter');
+          showError(getApiError(e, 'Failed to delete recruiter'));
         }
         setDeleteLoading(null);
       }
@@ -123,21 +135,13 @@ export default function Users() {
           });
           
           if (response.data.user) {
-            setCandidates(prev => prev.filter(u => (u._id ?? u.id) !== id));
-            const promotedUser = response.data.user;
-            setRecruiters(prev => [...prev, {
-              id: promotedUser.id,
-              _id: promotedUser.id,
-              firstName: name.split(' ')[0] || '',
-              lastName: name.split(' ').slice(1).join(' ') || '',
-              email: promotedUser.email,
-              role: promotedUser.role,
-              createdAt: new Date().toISOString()
-            }]);
+            await fetchUsers();
             showSuccess('User promoted to recruiter role successfully');
+          } else {
+            showError('Promotion response was invalid. Please refresh and try again.');
           }
         } catch (e) {
-          showError(e.response?.data?.message || 'Failed to promote candidate');
+          showError(getApiError(e, 'Failed to promote candidate'));
         }
         setPromoteLoading(null);
       }

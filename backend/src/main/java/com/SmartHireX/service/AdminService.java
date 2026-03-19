@@ -1,20 +1,42 @@
 package com.SmartHireX.service;
 
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.SmartHireX.entity.Chat;
-import com.SmartHireX.entity.Round;
 import com.SmartHireX.entity.CodingProblem;
 import com.SmartHireX.entity.InterviewFeedback;
+import com.SmartHireX.entity.Round;
+import com.SmartHireX.model.Application;
 import com.SmartHireX.model.InterviewRound;
 import com.SmartHireX.model.JobPosting;
-import com.SmartHireX.model.Application;
-import com.SmartHireX.repository.*;
-
-import java.util.List;
+import com.SmartHireX.repository.ApplicationRepository;
+import com.SmartHireX.repository.CandidateProfileRepository;
+import com.SmartHireX.repository.CandidateProgressRepository;
+import com.SmartHireX.repository.ChatRepository;
+import com.SmartHireX.repository.CodingExamResultRepository;
+import com.SmartHireX.repository.CodingProblemRepository;
+import com.SmartHireX.repository.EmailNotificationLogRepository;
+import com.SmartHireX.repository.ExamResultRepository;
+import com.SmartHireX.repository.InterviewFeedbackRepository;
+import com.SmartHireX.repository.InterviewRoundRepository;
+import com.SmartHireX.repository.JobRepository;
+import com.SmartHireX.repository.MessageRepository;
+import com.SmartHireX.repository.MixedExamResultRepository;
+import com.SmartHireX.repository.NotificationReadRepository;
+import com.SmartHireX.repository.OTPRepository;
+import com.SmartHireX.repository.PaymentRepository;
+import com.SmartHireX.repository.PracticeSessionRepository;
+import com.SmartHireX.repository.QuestionRepository;
+import com.SmartHireX.repository.RecruiterProfileRepository;
+import com.SmartHireX.repository.ResumeAnalysisHistoryRepository;
+import com.SmartHireX.repository.RoundRepository;
+import com.SmartHireX.repository.TestCaseRepository;
+import com.SmartHireX.repository.UserRepository;
 
 @Service
 public class AdminService {
@@ -225,8 +247,8 @@ public class AdminService {
                     try {
                         List<Application> apps = applicationRepository.findByEmailLowerOrderByCreatedAtDesc(emailLower);
                         for (Application app : apps) {
-                            candidateProgressRepository.findByJobIdAndApplicationId(app.getJob().getId(), app.getId())
-                                    .ifPresent(candidateProgressRepository::delete);
+                            // Delete progress by application directly to avoid FK leftovers.
+                            candidateProgressRepository.deleteByApplicationId(app.getId());
                             applicationRepository.delete(app);
                         }
                         log.info("Deleted {} applications and related progress", apps.size());

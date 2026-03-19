@@ -301,36 +301,54 @@ public class AdminController {
     @PostMapping("/promote-to-recruiter/{id}")
     public ResponseEntity<?> promoteToRecruiter(@PathVariable("id") Long id,
                                                @RequestBody(required = false) Map<String, Object> payload) {
-        return userRepository.findById(id).map(user -> {
-            if (user.getRole() != Role.CANDIDATE) {
+        try {
+            return userRepository.findById(id).map(user -> {
+                if (user.getRole() != Role.CANDIDATE) {
+                    Map<String, Object> err = new HashMap<>();
+                    err.put("message", "User is not a candidate");
+                    err.put("currentRole", user.getRole());
+                    return ResponseEntity.badRequest().body(err);
+                }
+
+                // Update role to RECRUITER and set as verified (admin approved)
+                user.setRole(Role.RECRUITER);
+                user.setVerified(true);
+                User savedUser = userRepository.save(user);
+
+                try {
+                    String firstName = savedUser.getFirstName() != null ? savedUser.getFirstName() : "User";
+                    emailService.sendWelcomeEmail(savedUser.getEmail(), firstName);
+                } catch (Exception e) {
+                    logger.warn("Failed to send welcome email after promotion to: {}", savedUser.getEmail(), e);
+                }
+
+                logger.info("Promoted candidate to recruiter with id {}", id);
+                Map<String, Object> promotedUser = new HashMap<>();
+                promotedUser.put("id", savedUser.getId());
+                promotedUser.put("_id", savedUser.getId());
+                promotedUser.put("firstName", savedUser.getFirstName());
+                promotedUser.put("lastName", savedUser.getLastName());
+                promotedUser.put("email", savedUser.getEmail());
+                promotedUser.put("role", savedUser.getRole());
+                promotedUser.put("verified", savedUser.isVerified());
+                promotedUser.put("createdAt", savedUser.getCreatedAt());
+
+                Map<String, Object> body = new HashMap<>();
+                body.put("message", "User promoted to recruiter successfully");
+                body.put("user", promotedUser);
+                return ResponseEntity.ok(body);
+            }).orElseGet(() -> {
                 Map<String, Object> err = new HashMap<>();
-                err.put("message", "User is not a candidate");
-                return ResponseEntity.badRequest().body(err);
-            }
-            
-            // Update role to RECRUITER and set as verified (admin approved)
-            user.setRole(Role.RECRUITER);
-            user.setVerified(true);
-            userRepository.save(user);
-            
-            try {
-                String firstName = user.getFirstName() != null ? user.getFirstName() : "User";
-                emailService.sendWelcomeEmail(user.getEmail(), firstName);
-            } catch (Exception e) {
-                logger.warn("Failed to send welcome email after promotion to: {}", user.getEmail(), e);
-            }
-            
-            logger.info("Promoted candidate to recruiter with id {}", id);
-            Map<String, Object> body = new HashMap<>();
-            body.put("message", "User promoted to recruiter successfully");
-            body.put("user", Map.of(
-                "id", user.getId(),
-                "email", user.getEmail(),
-                "role", user.getRole(),
-                "verified", user.isVerified()
+                err.put("message", "User not found");
+                return ResponseEntity.status(404).body(err);
+            });
+        } catch (Exception e) {
+            logger.error("Failed to promote candidate to recruiter with id {}", id, e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "message", "Failed to promote candidate",
+                    "error", e.getMessage() != null ? e.getMessage() : "Unknown error"
             ));
-            return ResponseEntity.ok(body);
-        }).orElseGet(() -> ResponseEntity.notFound().build());
+        }
     }
 
     // Admin dashboard statistics

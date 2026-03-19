@@ -430,7 +430,7 @@ const handleCancel = () => {
       console.error('❌ Judge call failed:', e);
       
       if (e.message.includes('Network Error') || e.message.includes('ERR_NETWORK')) {
-        setRunOutput(`❌ Network Error: Cannot connect to code execution server.\n\nTroubleshooting:\n1. ✅ Check if backend server is running on localhost:8080\n2. ✅ Verify /judge endpoint is accessible\n3. ✅ Check browser console for CORS errors\n4. ✅ Ensure Vite proxy is configured correctly\n\nCurrent endpoint: /judge\nExpected server: http://localhost:8080/judge`);
+        setRunOutput(`❌ Network Error: Cannot connect to code execution server.\n\nTroubleshooting:\n1. ✅ Check if backend server is running\n2. ✅ Verify /judge endpoint is accessible\n3. ✅ Check browser console for CORS errors\n4. ✅ Ensure API connection is configured correctly\n\nCurrent endpoint: /judge\nFor details, check browser DevTools`);
       } else if (e.message.includes('timeout') || e.code === 'ECONNABORTED') {
         setRunOutput(`❌ Timeout Error: Code execution took too long (>20 seconds).\n\nPossible causes:\n1. Infinite loop in your code\n2. Very large input data\n3. Server overload\n\nTry:\n- Check for infinite loops\n- Use smaller test inputs\n- Optimize your algorithm`);
       } else {

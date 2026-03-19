@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './Chat.css';
+import { API_BASE_URL } from '../config';
 
 const Chat = ({ roomCode, username, messages = [], newMessage = '', setNewMessage, handleSendMessage, isOpen, setIsOpen, ws }) => {
   const chatContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+  const API_URL = API_BASE_URL;
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {

@@ -348,9 +348,11 @@ function VideoCall() {
 
   const connectWebSocket = () => {
   // Try multiple WebSocket endpoints
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = new URL(API_BASE_URL).host;
   const WS_ENDPOINTS = [
-    'ws://localhost:8080/api/ws/signaling', // Try the working endpoint first
-    'ws://localhost:8080/ws/signaling'
+    `${wsProtocol}//${host}/api/ws/signaling`, // Try the working endpoint first
+    `${wsProtocol}//${host}/ws/signaling`
   ];
   
   let currentEndpointIndex = 0;
@@ -554,7 +556,9 @@ function VideoCall() {
       // Try alternative URL immediately on error
       if (ws.url.includes('/ws/signaling') && !ws.url.includes('/api/')) {
         console.log('🔄 Primary WebSocket failed, trying alternative URL immediately...');
-        const alternativeURL = 'ws://localhost:8080/api/ws/signaling';
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = new URL(API_BASE_URL).host;
+        const alternativeURL = `${wsProtocol}//${host}/api/ws/signaling`;
         console.log('🔌 Trying alternative WebSocket URL:', alternativeURL);
         const newWs = new WebSocket(alternativeURL);
         wsRef.current = newWs;

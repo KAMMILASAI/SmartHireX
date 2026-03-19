@@ -247,7 +247,7 @@ const Register = ({ embedded = false, onSuccess, onSwitchToLogin }) => {
       // Set registration context in session storage
       sessionStorage.setItem('oauth2_context', 'register');
       
-      const redirectUri = encodeURIComponent('http://localhost:5173/oauth2/redirect');
+      const redirectUri = encodeURIComponent(`${window.location.origin}/oauth2/redirect`);
       const oauth2Url = `${API_BASE_URL}/oauth2/authorize/${provider}?redirect_uri=${redirectUri}`;
       
       console.log('OAuth2 Registration - Provider:', provider);

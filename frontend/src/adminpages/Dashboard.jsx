@@ -25,8 +25,7 @@ export default function AdminDashboard() {
         const paymentsRes = await axios.get(`${API_BASE_URL}/admin/payments/total`, {
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-            'Access-Control-Allow-Origin': 'http://localhost:5173'
+            'Authorization': `Bearer ${token}`
           },
           withCredentials: true
         });
@@ -36,8 +35,7 @@ export default function AdminDashboard() {
         const chatRes = await axios.get(`${API_BASE_URL}/chat/unread-count`, {
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-            'Access-Control-Allow-Origin': 'http://localhost:5173'
+            'Authorization': `Bearer ${token}`
           },
           withCredentials: true
         });

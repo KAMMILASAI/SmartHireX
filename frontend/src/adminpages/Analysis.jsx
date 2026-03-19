@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import './UserCard.css';
 import './AnalysisDynamic.css';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 import { FiTrash2, FiUsers, FiUserCheck, FiTrendingUp, FiActivity } from 'react-icons/fi';
 
 export default function Analysis() {
@@ -87,7 +88,7 @@ export default function Analysis() {
       const token = localStorage.getItem('token');
       const endpoint = userType === 'candidate' ? 'candidates' : 'recruiters';
       
-      await axios.delete(`http://localhost:8080/api/admin/${endpoint}/${userId}`, {
+      await axios.delete(`${API_BASE_URL}/admin/${endpoint}/${userId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

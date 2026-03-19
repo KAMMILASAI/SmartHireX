@@ -2,8 +2,11 @@
   command = "npm run build"
   publish = "dist"
 
-# ✅ Handle React Router (SPA routes)
+# Handle React Router (SPA routes)
+# This redirect catches all requests and serves index.html for client-side routing
+# Status 200 ensures React can boot and handle the route
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+  force = false

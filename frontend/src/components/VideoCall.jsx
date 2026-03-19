@@ -3,10 +3,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { FaMicrophone, FaMicrophoneSlash, FaVideo, FaVideoSlash, FaPhoneSlash, FaUsers, FaExpand, FaCompress, FaComment, FaTimes, FaDesktop, FaClipboardList } from 'react-icons/fa';
 import Chat from './Chat';
 import ParticipantList from './ParticipantList';
+import { API_BASE_URL } from '../config';
 import './VideoCall.css';
 
-// Use environment variables for deployment
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
+// Build WS URL from the configured API base URL.
 const WS_URL = (() => {
   // Convert http:// to ws:// and https:// to wss://
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -90,8 +90,7 @@ function VideoCall() {
   // Load chat history
   const loadChatHistory = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-      const response = await fetch(`${API_URL}/chat/history/${roomCode}`);
+      const response = await fetch(`${API_BASE_URL}/chat/history/${roomCode}`);
       if (response.ok) {
         const history = await response.json();
         setMessages(history.map(msg => ({

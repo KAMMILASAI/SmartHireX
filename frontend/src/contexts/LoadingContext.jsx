@@ -27,22 +27,45 @@ export const LoadingProvider = ({ children }) => {
     }
   }, []);
 
+  const shouldTrackRequest = useCallback((config) => {
+    const method = (config?.method || 'get').toLowerCase();
+    const url = String(config?.url || '');
+
+    // Allow callers to opt out explicitly for background jobs.
+    if (config?.headers?.['X-Skip-Loader'] === 'true' || config?.skipGlobalLoader === true) {
+      return false;
+    }
+
+    // Ignore noisy background polling endpoints so spinner does not appear repeatedly.
+    if (method === 'get' && (
+      url.includes('/notifications?') ||
+      url.includes('/notifications/read-ids') ||
+      url.includes('/presence/')
+    )) {
+      return false;
+    }
+
+    return true;
+  }, []);
+
   // Setup axios interceptors once
   useEffect(() => {
     if (interceptorsSet.current) return;
     const reqId = axios.interceptors.request.use((config) => {
-      show();
+      const track = shouldTrackRequest(config);
+      config.__trackedByGlobalLoader = track;
+      if (track) show();
       return config;
     }, (error) => {
-      hide();
+      if (error?.config?.__trackedByGlobalLoader) hide();
       return Promise.reject(error);
     });
 
     const resId = axios.interceptors.response.use((response) => {
-      hide();
+      if (response?.config?.__trackedByGlobalLoader) hide();
       return response;
     }, (error) => {
-      hide();
+      if (error?.config?.__trackedByGlobalLoader) hide();
       return Promise.reject(error);
     });
 
@@ -53,7 +76,7 @@ export const LoadingProvider = ({ children }) => {
       axios.interceptors.response.eject(resId);
       interceptorsSet.current = false;
     };
-  }, [show, hide]);
+  }, [show, hide, shouldTrackRequest]);
 
   // Route change loading effect
   useEffect(() => {

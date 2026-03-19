@@ -1,0 +1,169 @@
+/* User List Section */
+.user-list-section {
+  margin-bottom: 2rem;
+}
+
+.user-list-card {
+  background: #0f1629;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.user-list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #1f2937;
+}
+
+.user-list-header h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.user-count {
+  font-size: 0.9rem;
+  color: #a0aec0;
+  margin: 0;
+}
+
+.user-table-container {
+  overflow-x: auto;
+}
+
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.user-table th {
+  background: #111827;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #e5e7eb;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #1f2937;
+}
+
+.user-table td {
+  padding: 1rem;
+  border-bottom: 1px solid #1f2937;
+  vertical-align: middle;
+  color: #e2e8f0;
+}
+
+.user-table tr:hover {
+  background: #111827;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4F46E5, #7C3AED);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.user-name {
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+.user-email {
+  color: #a0aec0;
+  font-size: 0.9rem;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.role-badge.candidate {
+  background: rgba(59,130,246,0.2);
+  color: #93c5fd;
+}
+
+.role-badge.recruiter {
+  background: rgba(236,72,153,0.2);
+  color: #f9a8d4;
+}
+
+.join-date {
+  color: #a0aec0;
+  font-size: 0.9rem;
+}
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.status-badge.active {
+  background: rgba(34,197,94,0.2);
+  color: #86efac;
+}
+
+.status-badge.pending {
+  background: rgba(250,204,21,0.15);
+  color: #fde68a;
+}
+
+.no-users {
+  text-align: center;
+  color: #a0aec0;
+  font-style: italic;
+  padding: 2rem;
+}
+
+/* Responsive Design for User Table */
+@media (max-width: 768px) {
+  .user-list-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .user-table th,
+  .user-table td {
+    padding: 0.5rem;
+    font-size: 0.8rem;
+  }
+  
+  .user-info {
+    gap: 0.5rem;
+  }
+  
+  .user-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.7rem;
+  }
+}

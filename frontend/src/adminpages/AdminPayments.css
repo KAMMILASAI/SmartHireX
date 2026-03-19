@@ -1,0 +1,299 @@
+.payments-container {
+  padding: 100px 40px 100px;
+  background-color: #0f172a;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.payments-container h2 {
+  margin: 0 0 1.5rem 0;
+  color: #e5e7eb;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.no-payments {
+  text-align: center;
+  color: #94a3b8;
+  font-size: 1.1rem;
+  margin: 2rem 0;
+}
+
+.table-container {
+  background: #0b1323;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  border: 1px solid #1f2937;
+}
+
+.payments-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.payments-table thead {
+  background: #0f172a;
+}
+
+.payments-table th {
+  padding: 16px 12px;
+  text-align: left;
+  font-weight: 700;
+  color: #e5e7eb;
+  border-bottom: 1px solid #1f2937;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.payments-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #1f2937;
+  vertical-align: middle;
+  color: #cbd5e1;
+}
+
+.table-row:hover {
+  background-color: #111827;
+}
+
+.table-row.even { background-color: #0b1323; }
+
+.table-row.odd { background-color: #0b1323; }
+
+/* User info styling */
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1f2937, #334155);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e5e7eb;
+  font-weight: 600;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.user-profile-pic {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center;
+  flex-shrink: 0;
+  border: 2px solid #1f2937;
+}
+
+.user-name {
+  font-weight: 600;
+  color: #e5e7eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.email { color: #94a3b8; font-weight: 500; }
+
+.role-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.role-badge.candidate { background: #14532d; color: #dcfce7; }
+
+.role-badge.recruiter { background: #1e3a8a; color: #dbeafe; }
+
+.amount { font-weight: 700; color: #34d399; font-size: 1rem; }
+
+.payment-id {
+  background: #0f172a;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  border: 1px solid #1f2937;
+}
+
+.date { color: #94a3b8; font-weight: 500; }
+
+/* Delete column styling */
+.payments-table td:last-child { text-align: center; vertical-align: middle; }
+
+.payments-table th:last-child { text-align: center; }
+
+/* Delete Button */
+.delete-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #dc3545;
+  background: #dc3545;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  position: relative;
+  margin: 0 auto;
+}
+
+.delete-btn:hover {
+  background: #b02a37;
+  color: white;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
+}
+
+.delete-btn:active {
+  transform: scale(0.95);
+}
+
+.delete-btn:disabled {
+  background: rgba(108, 117, 125, 0.1);
+  color: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.delete-btn:disabled:hover {
+  background: rgba(108, 117, 125, 0.1);
+  color: #6c757d;
+  transform: none;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Delete link styling */
+.delete-link {
+  color: #ef4444;
+  cursor: pointer;
+  font-weight: 700;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.delete-link:hover { color: #f87171; text-decoration: none; }
+
+.delete-loading { color: #94a3b8; font-style: italic; }
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .payments-container { padding: 0.5rem; }
+  
+  .table-container {
+    overflow-x: auto;
+  }
+  
+  .payments-table { min-width: 700px; }
+  
+  .payments-table th,
+  .payments-table td {
+    padding: 10px 8px;
+    font-size: 0.8rem;
+  }
+  
+  .user-info {
+    gap: 6px;
+  }
+  
+  .avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.7rem;
+  }
+  
+  .table-delete-btn {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* Loading and Error States */
+.loading-container, .error-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
+  padding: 2rem;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #4F46E5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-message {
+  text-align: center;
+  padding: 2rem;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 12px;
+  max-width: 400px;
+}
+
+.error-message h3 {
+  color: #DC2626;
+  margin-bottom: 1rem;
+  font-size: 1.2rem;
+}
+
+.error-message p {
+  color: #7F1D1D;
+  margin-bottom: 1.5rem;
+}
+
+.retry-button {
+  background: linear-gradient(135deg, #DC2626, #B91C1C);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.retry-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}

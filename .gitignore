@@ -1,0 +1,7 @@
+.env
+.env.*
+backend/.env
+backend/target/
+frontend/node_modules/
+backend/.mvn/wrapper/maven-wrapper.jar
+frontend/dist/

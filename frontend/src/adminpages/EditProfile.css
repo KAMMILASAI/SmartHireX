@@ -1,0 +1,224 @@
+.admin-ep-container {
+  padding: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: calc(100vh - 120px);
+  background-color: transparent;
+}
+
+.admin-ep-card {
+  background-color: #1a2332;
+  border-radius: 1rem;
+  padding: 2.5rem;
+  width: 100%;
+  max-width: 600px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.admin-ep-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.admin-ep-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.admin-ep-subtitle {
+  color: #94a3b8;
+  font-size: 1rem;
+}
+
+.admin-ep-error {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.admin-ep-success {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.admin-ep-avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 2.5rem;
+}
+
+.admin-ep-avatar-wrapper {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  border: 3px solid #0ea5e9;
+  transition: transform 0.3s ease;
+}
+
+.admin-ep-avatar-wrapper:hover {
+  transform: scale(1.05);
+}
+
+.admin-ep-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-ep-avatar-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  color: #fff;
+}
+
+.admin-ep-avatar-wrapper:hover .admin-ep-avatar-overlay {
+  opacity: 1;
+}
+
+.admin-ep-upload-hint {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.admin-ep-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admin-ep-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-ep-form-group label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-ep-form-group input {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  color: #f8fafc;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+}
+
+.admin-ep-form-group input:focus {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+}
+
+.admin-ep-input-disabled {
+  background-color: #1e293b !important;
+  color: #64748b !important;
+  cursor: not-allowed;
+}
+
+.admin-ep-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2rem;
+  gap: 1rem;
+}
+
+.admin-ep-btn-primary {
+  background-color: #0ea5e9;
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  flex: 1;
+  justify-content: center;
+}
+
+.admin-ep-btn-primary:hover {
+  background-color: #0284c7;
+  transform: translateY(-1px);
+}
+
+.admin-ep-btn-secondary {
+  background-color: transparent;
+  color: #94a3b8;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  border: 1px solid #334155;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  flex: 1;
+  justify-content: center;
+}
+
+.admin-ep-btn-secondary:hover {
+  background-color: #1e293b;
+  color: #f1f5f9;
+  border-color: #475569;
+}
+
+.admin-ep-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  color: #fff;
+  font-size: 1.25rem;
+}
+
+@media (max-width: 640px) {
+  .admin-ep-card {
+    padding: 1.5rem;
+  }
+  
+  .admin-ep-actions {
+    flex-direction: column-reverse;
+  }
+  
+  .admin-ep-btn-primary, .admin-ep-btn-secondary {
+    width: 100%;
+  }
+}

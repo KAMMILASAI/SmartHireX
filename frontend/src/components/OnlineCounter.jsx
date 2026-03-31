@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { FaEye } from 'react-icons/fa';
 import './OnlineCounter.css';
+import { API_BASE_URL } from '../config';
 
 const OnlineCounter = () => {
   const [onlineCount, setOnlineCount] = useState(0);
   const [hovered, setHovered] = useState(false);
-
-  const API_BASE = import.meta?.env?.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
   // Stable client id in localStorage
   const getClientId = () => {
@@ -19,10 +18,23 @@ const OnlineCounter = () => {
   };
 
   useEffect(() => {
+    const getCurrentUserId = () => {
+      try {
+        const userData = localStorage.getItem('user');
+        if (userData) {
+          const user = JSON.parse(userData);
+          if (user && user.id) return String(user.id);
+        }
+      } catch (_) {
+        // ignore
+      }
+      return null;
+    };
+
     // Function to fetch online count from backend
     const fetchOnlineCount = async () => {
       try {
-        const res = await fetch(`${API_BASE}/presence/count`, { credentials: 'include' });
+        const res = await fetch(`${API_BASE_URL}/presence/count`, { credentials: 'include' });
         if (!res.ok) return;
         const data = await res.json();
         if (typeof data?.count === 'number') setOnlineCount(data.count);
@@ -35,11 +47,11 @@ const OnlineCounter = () => {
     const updateOnlineStatus = async (_status) => {
       try {
         const clientId = getClientId();
-        await fetch(`${API_BASE}/presence/heartbeat`, {
+        await fetch(`${API_BASE_URL}/presence/heartbeat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ clientId })
+          body: JSON.stringify({ clientId, userId: getCurrentUserId() })
         });
       } catch (_) {
         // ignore

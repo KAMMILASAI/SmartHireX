@@ -1,39 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
-import { FiUsers, FiFileText, FiTrendingUp, FiBriefcase, FiPlusCircle, FiCalendar, FiUserCheck, FiUser, FiMessageCircle } from 'react-icons/fi';
+import { API_BASE_URL } from '../config';
+import { FiUsers, FiFileText, FiBriefcase, FiCalendar, FiUserCheck, FiUser, FiMessageCircle } from 'react-icons/fi';
 import './DashboardHome.css';
-
-// CSS for the mini bar charts
-const chartContainerStyle = {
-  height: '150px',
-  display: 'flex',
-  alignItems: 'flex-end',
-  gap: '10px',
-  padding: '15px 0',
-  margin: '10px 0 20px',
-};
-
-const barStyle = (height, isMax) => ({
-  flex: 1,
-  height: `${height}%`,
-  background: isMax ? 'linear-gradient(45deg, #4f46e5, #7c3aed)' : 'linear-gradient(45deg, #e0e7ff, #c7d2fe)',
-  borderRadius: '6px',
-  position: 'relative',
-  transition: 'all 0.3s ease',
-  '&:hover': {
-    transform: 'scaleY(1.05)',
-  },
-});
-
-const labelStyle = {
-  position: 'absolute',
-  bottom: '-25px',
-  left: '50%',
-  transform: 'translateX(-50%)',
-  fontSize: '0.75rem',
-  color: '#6b7280',
-};
 
 const StatCard = ({ title, value, icon, gradient }) => (
   <div className="rdh-card rdh-stat">
@@ -68,33 +38,10 @@ export default function DashboardHome() {
     companyName: 'Your Company',
     location: 'Location not set',
     website: '',
-    numEmployees: 0
+    numEmployees: 0,
+    image: ''
   });
 
-  // Generate mock data for fallback
-  const generateMockData = () => {
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-    const mockCandidates = months.map(month => ({
-      month,
-      count: Math.floor(Math.random() * 50) + 10 // 10-60
-    }));
-    
-    const mockDrives = months.map(month => ({
-      month,
-      count: Math.floor(Math.random() * 10) + 1 // 1-10
-    }));
-    
-    return {
-      totalCandidates: Math.floor(Math.random() * 900) + 100, // 100-1000
-      activeChats: Math.floor(Math.random() * 45) + 5, // 5-50
-      drivesConducted: Math.floor(Math.random() * 90) + 10, // 10-100
-      totalEmployees: Math.floor(Math.random() * 90) + 10, // 10-100
-      charts: {
-        candidatesByMonth: mockCandidates,
-        drivesByMonth: mockDrives
-      }
-    };
-  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -108,21 +55,27 @@ export default function DashboardHome() {
       // Use Promise.all to fetch both stats and profile in parallel
       try {
         const [statsRes, profileRes] = await Promise.all([
-          // Fetch stats with fallback to mock data
-          axios.get('http://localhost:8080/api/recruiter/dashboard-stats', {
-            headers: { Authorization: `Bearer ${token}` },
-            timeout: 3000 // 3 second timeout
+          // Fetch stats from API
+          axios.get(`${API_BASE_URL}/recruiter/dashboard-stats`, {
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 5000 // 5 second timeout
           }).catch(err => {
-            console.log('Using fallback mock data for stats');
-            return { data: generateMockData() };
+            console.log('Stats API failed:', err.message);
+            return { data: null };
           }),
           
           // Fetch profile with error handling
-          axios.get('http://localhost:8080/api/user/profile', {
-            headers: { Authorization: `Bearer ${token}` },
-            timeout: 3000
+          axios.get(`${API_BASE_URL}/user/profile`, {
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 5000
           }).catch(err => {
-            console.log('Using default profile data');
+            console.log('Using default profile data:', err.message);
             return { data: profile }; // Use existing profile state if fetch fails
           })
         ]);
@@ -149,16 +102,26 @@ export default function DashboardHome() {
           setProfile(prev => ({
             ...prev,
             ...profileRes.data,
-            companyName: profileRes.data.companyName || prev.companyName,
+            companyName: profileRes.data.company || profileRes.data.companyName || prev.companyName,
             location: profileRes.data.location || prev.location,
             numEmployees: profileRes.data.numEmployees || prev.numEmployees,
-            website: profileRes.data.website || prev.website
+            website: profileRes.data.companyLink || profileRes.data.website || prev.website,
+            image: profileRes.data.image || prev.image
           }));
         }
       } catch (err) {
         console.error('Error in dashboard data fetch:', err);
-        // Ensure we have some data to display even if there's an error
-        setStats(generateMockData());
+        // Set empty stats if API fails
+        setStats({
+          totalCandidates: 0,
+          activeChats: 0,
+          drivesConducted: 0,
+          totalEmployees: 0,
+          charts: {
+            candidatesByMonth: [],
+            drivesByMonth: []
+          }
+        });
       } finally {
         setLoading(false);
       }
@@ -185,11 +148,23 @@ export default function DashboardHome() {
     <div className="rdh-container">
       {/* Welcome Header */}
       <div className="rdh-card rdh-welcome">
-        <h1>Welcome back, {profile.companyName}!</h1>
+        <div className="welcome-main">
+          <div className="welcome-avatar" aria-label={profile.companyName || 'Company'}>
+            {profile.image ? (
+              <img src={profile.image} alt={profile.companyName || 'Company'} />
+            ) : (
+              <span>{(profile.companyName || 'C')[0]?.toUpperCase()}</span>
+            )}
+          </div>
+          <div className="welcome-text">
+            <h1>{profile.companyName || 'Your Company'}</h1>
+            <p>Recruiter Dashboard</p>
+          </div>
+        </div>
         <div className="meta">
-          {profile.location && <span>📍 {profile.location}</span>}
-          {profile.website && <span>🌐 {profile.website}</span>}
-          <span>👥 {profile.numEmployees || stats.totalEmployees} employees</span>
+          {profile.location && <span className="meta-chip">📍 {profile.location}</span>}
+          {profile.website && <span className="meta-chip">🌐 {profile.website}</span>}
+          <span className="meta-chip">👥 {profile.numEmployees || stats.totalEmployees} employees</span>
         </div>
       </div>
 
@@ -245,7 +220,9 @@ export default function DashboardHome() {
               const isMax = item.count === maxDrives && item.count > 0;
               return (
                 <div key={index} className={`rdh-bar ${isMax ? 'max' : 'norm'}`} style={{ height: `${height}%` }}>
-                  <span className="rdh-label">{item.month}\n                    <div style={{ fontSize: '10px' }}>{item.count}</div>
+                  <span className="rdh-label">
+                    {item.month}
+                    <span className="rdh-count">{item.count}</span>
                   </span>
                 </div>
               );
@@ -267,7 +244,7 @@ export default function DashboardHome() {
           <QuickAction 
             title="Schedule Interview" 
             icon={<FiCalendar />}
-            to="/recruiter/interview"
+            to="/recruiter/generate-test"
             gradient="grad-green"
           />
           <QuickAction 

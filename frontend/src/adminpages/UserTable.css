@@ -131,6 +131,11 @@
   color: #86efac;
 }
 
+.status-badge.inactive {
+  background: rgba(148,163,184,0.2);
+  color: #cbd5e1;
+}
+
 .status-badge.pending {
   background: rgba(250,204,21,0.15);
   color: #fde68a;

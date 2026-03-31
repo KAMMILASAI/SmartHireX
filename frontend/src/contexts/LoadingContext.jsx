@@ -31,7 +31,11 @@ export const LoadingProvider = ({ children }) => {
   useEffect(() => {
     if (interceptorsSet.current) return;
     const reqId = axios.interceptors.request.use((config) => {
-      show();
+      // Skip loader for background requests (e.g., polling)
+      const skipLoader = Boolean(config?.headers?.['x-skip-loader']);
+      if (!skipLoader) {
+        show();
+      }
       return config;
     }, (error) => {
       hide();
@@ -39,10 +43,17 @@ export const LoadingProvider = ({ children }) => {
     });
 
     const resId = axios.interceptors.response.use((response) => {
-      hide();
+      // Only hide if this request was tracked by loader
+      const skipLoader = Boolean(response?.config?.headers?.['x-skip-loader']);
+      if (!skipLoader) {
+        hide();
+      }
       return response;
     }, (error) => {
-      hide();
+      const skipLoader = Boolean(error?.config?.headers?.['x-skip-loader']);
+      if (!skipLoader) {
+        hide();
+      }
       return Promise.reject(error);
     });
 

@@ -30,12 +30,12 @@ export default function Analysis() {
       const token = localStorage.getItem('token');
       
       // Fetch candidates
-      const candidatesRes = await axios.get('http://localhost:8080/api/admin/candidates', {
+      const candidatesRes = await axios.get(`${API_BASE_URL}/admin/candidates`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
       // Fetch recruiters
-      const recruitersRes = await axios.get('http://localhost:8080/api/admin/recruiters', {
+      const recruitersRes = await axios.get(`${API_BASE_URL}/admin/recruiters`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

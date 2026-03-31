@@ -7,6 +7,7 @@ import com.SmartHireX.entity.User;
 import com.SmartHireX.service.GeminiQuestionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -42,11 +43,13 @@ public class GeminiQuestionServiceImpl implements GeminiQuestionService {
         return dedupMcqs(userKey, all, count);
     }
 
+    
+
     @Override
-    public CodingChallenge generateCoding(User user, CandidateProfile profile, String tech, String difficulty) {
+    public CodingChallenge generateCoding(User user, CandidateProfile profile, String tech, String difficulty, int testCases) {
         ensureApiKey();
         String userKey = safeUserKey(user);
-        String prompt = buildCodingPrompt(user, profile, tech, difficulty);
+        String prompt = buildCodingPrompt(user, profile, tech, difficulty, testCases);
         String responseText = callGeminiWithRetries(prompt, 2);
         CodingChallenge cc = parseCoding(responseText, tech, difficulty);
         // Dedup by title
@@ -81,13 +84,25 @@ public class GeminiQuestionServiceImpl implements GeminiQuestionService {
     }
 
     private String buildCodingPrompt(User user, CandidateProfile profile, String tech, String difficulty) {
+        return buildCodingPrompt(user, profile, tech, difficulty, 10); // Default to 10 test cases
+    }
+
+    private String buildCodingPrompt(User user, CandidateProfile profile, String tech, String difficulty, int testCases) {
         String skills = profile != null && profile.getSkills() != null ? profile.getSkills() : "";
         return String.format(Locale.ROOT,
                 "Generate one coding challenge for technology: %s at %s difficulty. " +
                 "Personalize for candidate skills: %s. " +
-                "Return ONLY JSON (no markdown) with schema: {\"title\":string,\"description\":string,\"examples\":[{\"input\":string,\"output\":string}],\"constraints\":[string],\"timeComplexity\":string,\"spaceComplexity\":string,\"starter\":string,\"hints\":[string]}. " +
-                "Make it interview-style and practical. Avoid problems previously generated.",
-                tech, difficulty, skills);
+                "CRITICAL: Include exactly %d test cases in the 'examples' array. Format examples like LeetCode/HackerRank style: " +
+                "- Use clean, simple input formats (arrays as [1,2,3], strings as \"hello\", numbers as 5) " +
+                "- For complex data structures, use minimal JSON format " +
+                "- Avoid verbose nested objects unless absolutely necessary " +
+                "- Each example MUST have 'input' and 'output' fields with clean, readable values " +
+                "Return ONLY valid JSON (no markdown fences, no extra text) with this EXACT schema: " +
+                "{\"title\":\"Problem Title\",\"description\":\"Problem description\",\"examples\":[{\"input\":\"[1,2,3]\",\"output\":\"6\"},{\"input\":\"[]\",\"output\":\"0\"}],\"constraints\":[\"1 <= nums.length <= 1000\",\"0 <= nums[i] <= 100\"],\"timeComplexity\":\"O(n)\",\"spaceComplexity\":\"O(1)\",\"starter\":\"// Write your solution here\",\"hints\":[\"Try using a loop\"]}. " +
+                "MANDATORY: The 'examples' array MUST contain exactly %d objects, each with 'input' and 'output' string fields. " +
+                "Make examples concise and clear like real coding platforms. Use simple data formats: arrays [1,2,3], strings \"abc\", numbers 42. " +
+                "For tree/graph problems, use standard representations like [1,null,2,3] for binary trees.",
+                tech, difficulty, skills, testCases, testCases);
     }
 
     private String callGeminiWithRetries(String prompt, int attempts) {
@@ -106,7 +121,7 @@ public class GeminiQuestionServiceImpl implements GeminiQuestionService {
 
     private String callGemini(String prompt) {
         try {
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + geminiApiKey;
+            String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + geminiApiKey;
             Map<String, Object> payload = new HashMap<>();
             Map<String, Object> parts = new HashMap<>();
             parts.put("text", prompt);
@@ -179,14 +194,20 @@ public class GeminiQuestionServiceImpl implements GeminiQuestionService {
 
     private CodingChallenge parseCoding(String responseText, String tech, String difficulty) {
         try {
+            System.out.println("=== AI RESPONSE DEBUG ===");
+            System.out.println("Raw AI response: " + responseText);
+            System.out.println("Response length: " + responseText.length());
+            
             JsonNode root;
             try {
                 root = mapper.readTree(responseText);
             } catch (Exception ex) {
+                System.out.println("Failed to parse as JSON, trying to clean...");
                 String cleaned = responseText
                         .replaceAll("^```json[\\r\\n]+", "")
                         .replaceAll("```[\\r\\n]*$", "")
                         .trim();
+                System.out.println("Cleaned response: " + cleaned);
                 root = mapper.readTree(cleaned);
             }
             CodingChallenge cc = new CodingChallenge();
@@ -196,15 +217,29 @@ public class GeminiQuestionServiceImpl implements GeminiQuestionService {
             cc.setDescription(root.path("description").asText(""));
             // examples
             List<Map<String,String>> examples = new ArrayList<>();
+            System.out.println("Examples node exists: " + root.has("examples"));
+            System.out.println("Examples is array: " + root.path("examples").isArray());
+            System.out.println("Examples node: " + root.path("examples"));
+            
             if (root.path("examples").isArray()) {
                 for (JsonNode ex : root.path("examples")) {
                     Map<String,String> m = new HashMap<>();
                     m.put("input", ex.path("input").asText(""));
                     m.put("output", ex.path("output").asText(""));
                     examples.add(m);
+                    System.out.println("Added example: " + m);
                 }
             }
+            // If no examples in JSON, try to extract from description
+            if (examples.isEmpty()) {
+                System.out.println("No examples in JSON, trying to extract from description...");
+                String description = cc.getDescription();
+                examples = extractExamplesFromDescription(description);
+                System.out.println("Extracted " + examples.size() + " examples from description");
+            }
+            
             cc.setExamples(examples);
+            System.out.println("Total examples parsed: " + examples.size());
             // constraints
             List<String> constraints = new ArrayList<>();
             if (root.path("constraints").isArray()) {
@@ -225,6 +260,123 @@ public class GeminiQuestionServiceImpl implements GeminiQuestionService {
             return cc;
         } catch (Exception e) {
             throw new RuntimeException("Failed to parse Coding challenge from Gemini: " + e.getMessage(), e);
+        }
+    }
+    
+    private List<Map<String, String>> extractExamplesFromDescription(String description) {
+        List<Map<String, String>> examples = new ArrayList<>();
+        try {
+            // Pattern 1: Simple format like your examples - "Example N:\nInput: ...\nOutput: ..."
+            java.util.regex.Pattern simplePattern = java.util.regex.Pattern.compile(
+                "Example\\s+(\\d+):\\s*Input:\\s*(.*?)\\s*Output:\\s*(.*?)(?=Example|$)", 
+                java.util.regex.Pattern.DOTALL
+            );
+            java.util.regex.Matcher simpleMatcher = simplePattern.matcher(description);
+            
+            while (simpleMatcher.find()) {
+                Map<String, String> example = new HashMap<>();
+                example.put("input", simpleMatcher.group(2).trim());
+                example.put("output", simpleMatcher.group(3).trim());
+                examples.add(example);
+                System.out.println("Extracted simple example from description: " + example);
+            }
+            
+            // Pattern 2: **Example N:** followed by ``` Input: ... Output: ... ``` (fallback)
+            if (examples.isEmpty()) {
+                java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                    "\\*\\*Example\\s+(\\d+):\\*\\*\\s*```\\s*Input:\\s*(.*?)\\s*Output:\\s*(.*?)\\s*```", 
+                    java.util.regex.Pattern.DOTALL
+                );
+                java.util.regex.Matcher matcher = pattern.matcher(description);
+                
+                while (matcher.find()) {
+                    Map<String, String> example = new HashMap<>();
+                    example.put("input", matcher.group(2).trim());
+                    example.put("output", matcher.group(3).trim());
+                    examples.add(example);
+                    System.out.println("Extracted formatted example from description: " + example);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("Error extracting examples from description: " + e.getMessage());
+        }
+        return examples;
+    }
+
+    @Override
+    public List<Map<String, Object>> generateInterviewQuestions(User user, CandidateProfile profile, String type, String tech, String projectSummary, String difficulty, Integer numQuestions, String resumeText) {
+        ensureApiKey();
+        String prompt = buildInterviewPrompt(user, profile, type, tech, projectSummary, difficulty, numQuestions, resumeText);
+        String responseText = callGeminiWithRetries(prompt, 2);
+        return parseInterviewQuestions(responseText, type, difficulty, numQuestions);
+    }
+    
+    private String buildInterviewPrompt(User user, CandidateProfile profile, String type, String tech, String projectSummary, String difficulty, Integer numQuestions, String resumeText) {
+        String skills = profile != null && profile.getSkills() != null ? profile.getSkills() : "";
+        
+        if ("technology".equals(type)) {
+            return String.format(Locale.ROOT,
+                "Generate %d interview questions for technology: %s at %s difficulty level. " +
+                "Personalize for candidate skills: %s. " +
+                "Return ONLY valid JSON (no markdown fences) with this exact schema: " +
+                "{\"questions\":[{\"id\":\"q1\",\"text\":\"Question text here?\",\"timeLimit\":120,\"category\":\"technical\",\"followUp\":\"Optional follow-up question\"}]}. " +
+                "Make questions practical, interview-style, and relevant to %s technology. " +
+                "Include a mix of: technical concepts, problem-solving scenarios, experience-based questions. " +
+                "Each question should have a timeLimit of 90-180 seconds. Categories: technical, behavioral, problem-solving.",
+                numQuestions, tech, difficulty, skills, tech);
+        } else {
+            return String.format(Locale.ROOT,
+                "Generate %d project/resume-based interview questions at %s difficulty level. " +
+                "Project summary: %s. Candidate skills: %s. Resume text: %s. " +
+                "Return ONLY valid JSON (no markdown fences) with this exact schema: " +
+                "{\"questions\":[{\"id\":\"q1\",\"text\":\"Question text here?\",\"timeLimit\":120,\"category\":\"project\",\"followUp\":\"Optional follow-up question\"}]}. " +
+                "Focus on: project experience, technical decisions, challenges faced, team collaboration, impact. " +
+                "Each question should have a timeLimit of 90-180 seconds. Categories: project, experience, leadership, technical.",
+                numQuestions, difficulty, projectSummary, skills, resumeText);
+        }
+    }
+    
+    private List<Map<String, Object>> parseInterviewQuestions(String responseText, String type, String difficulty, Integer numQuestions) {
+        try {
+            System.out.println("=== AI INTERVIEW RESPONSE DEBUG ===");
+            System.out.println("Raw AI response: " + responseText);
+            
+            JsonNode root;
+            try {
+                root = mapper.readTree(responseText);
+            } catch (Exception ex) {
+                System.out.println("Failed to parse as JSON, trying to clean...");
+                String cleaned = responseText
+                        .replaceAll("^```json[\\r\\n]+", "")
+                        .replaceAll("```[\\r\\n]*$", "")
+                        .trim();
+                System.out.println("Cleaned response: " + cleaned);
+                root = mapper.readTree(cleaned);
+            }
+            
+            List<Map<String, Object>> questions = new ArrayList<>();
+            JsonNode questionsArray = root.path("questions");
+            
+            if (questionsArray.isArray()) {
+                for (int i = 0; i < questionsArray.size(); i++) {
+                    JsonNode q = questionsArray.get(i);
+                    Map<String, Object> question = new HashMap<>();
+                    question.put("id", q.path("id").asText("q" + (i + 1)));
+                    question.put("text", q.path("text").asText(""));
+                    question.put("timeLimit", q.path("timeLimit").asInt(120));
+                    question.put("category", q.path("category").asText("general"));
+                    question.put("followUp", q.path("followUp").asText(""));
+                    questions.add(question);
+                    System.out.println("Parsed interview question: " + question);
+                }
+            }
+            
+            System.out.println("Total interview questions parsed: " + questions.size());
+            return questions;
+            
+        } catch (Exception e) {
+            System.err.println("Failed to parse interview questions: " + e.getMessage());
+            throw new RuntimeException("AI interview question generation failed: " + e.getMessage(), e);
         }
     }
 

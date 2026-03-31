@@ -1,8 +1,5 @@
 package com.SmartHireX.security;
 
-import com.SmartHireX.entity.User;
-import com.SmartHireX.exception.ResourceNotFoundException;
-import com.SmartHireX.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +8,10 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.SmartHireX.entity.User;
+import com.SmartHireX.exception.ResourceNotFoundException;
+import com.SmartHireX.repository.UserRepository;
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {

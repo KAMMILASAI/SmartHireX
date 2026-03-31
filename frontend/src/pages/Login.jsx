@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
-import './Auth.css';
+import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
+import { FaUser } from 'react-icons/fa';
 
-// API base URL
-const API_URL = 'http://localhost:8080/api';
+import { API_BASE_URL } from '../config';
+import './Auth.css';
 
 const googleLogo = (
   <svg width="20" height="20" viewBox="0 0 24 24">
@@ -16,11 +17,6 @@ const googleLogo = (
   </svg>
 );
 
-const appleLogo = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="#000" xmlns="http://www.w3.org/2000/svg">
-    <path d="M16.365 1.43c0 1.14-.47 2.22-1.11 3.02-.66.82-1.77 1.45-2.87 1.36-.11-1.1.48-2.23 1.11-2.94.7-.85 1.93-1.46 2.87-1.44zM20.94 17.06c-.6 1.39-.9 1.99-1.7 3.21-1.1 1.67-2.65 3.75-4.55 3.76-1.06.02-1.78-.71-3.12-.71-1.35 0-2.13.69-3.2.72-1.9.07-3.35-1.8-4.45-3.46-2.43-3.7-2.69-8.03-1.19-10.34 1.07-1.7 2.76-2.68 4.35-2.68 1.62 0 2.64.73 3.98.73 1.31 0 2.09-.73 3.97-.73 1.47 0 3.02.8 4.09 2.19-3.6 1.98-3.02 7.13.82 8.11z"/>
-  </svg>
-);
 
 const githubLogo = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="#333">
@@ -28,33 +24,92 @@ const githubLogo = (
   </svg>
 );
 
-const eyeIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-    <circle cx="12" cy="12" r="3"/>
-  </svg>
-);
-
-const eyeOffIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-    <line x1="1" y1="1" x2="23" y2="23"/>
-  </svg>
-);
-
-const Login = () => {
+const Login = ({ embedded = false, onSuccess, onSwitchToRegister }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { showSuccess, showError, showInfo } = useToast();
+  const { showSuccess, showError } = useToast();
+  
+  // Form mode state
+  const [currentView, setCurrentView] = useState('login'); // 'login', 'register', 'forgot-password'
+  
+  // Login states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
-  const [showOtp, setShowOtp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [resetCodeSent, setResetCodeSent] = useState(false);
+  
+  const handleRegisterClick = () => {
+    if (embedded && onSwitchToRegister) {
+      onSwitchToRegister();
+    } else {
+      navigate('/register');
+    }
+  };
+
+
+  // Handle login success
+  const handleLoginSuccess = (data) => {
+    try {
+      console.log('handleLoginSuccess called with data:', data);
+      
+      // Extract token and user data from response
+      const token = data.token || data.accessToken || data.jwt;
+      const userData = data.user || data;
+      
+      if (!token) {
+        console.error('No token found in login response');
+        throw new Error('No authentication token received');
+      }
+      
+      console.log('Storing token in localStorage');
+      localStorage.setItem('token', token);
+      
+      if (userData) {
+        console.log('Storing user data:', userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+      }
+      
+      // Handle remember me functionality
+      if (rememberMe && email) {
+        localStorage.setItem('rememberedEmail', email.trim().toLowerCase());
+      } else {
+        localStorage.removeItem('rememberedEmail');
+      }
+      // Ensure no plaintext password is persisted from older versions.
+      localStorage.removeItem('rememberedPassword');
+      
+      showSuccess('Login successful! Redirecting...');
+      
+      // Call onSuccess callback if in embedded mode
+      if (embedded && onSuccess) {
+        console.log('Calling onSuccess callback for embedded mode');
+        onSuccess();
+        return;
+      }
+
+      // Determine user role for redirection
+      const rawRole = (userData?.role || 'candidate').toLowerCase();
+      const userRole = rawRole.startsWith('role_') ? rawRole.substring(5) : rawRole;
+      console.log('User role determined as:', userRole);
+      
+      // Redirect based on role
+      const redirectPath = 
+        userRole === 'admin' ? '/admin/dashboard' :
+        userRole === 'recruiter' ? '/recruiter/dashboard' :
+        '/candidate/dashboard';
+      
+      console.log('Redirecting to:', redirectPath);
+      navigate(redirectPath);
+    } catch (error) {
+      console.error('Error in handleLoginSuccess:', error);
+      setError('An error occurred during login. Please try again.');
+    }
+  };
 
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
@@ -68,8 +123,10 @@ const Login = () => {
     if (errorParam) {
       showError(errorParam);
     }
-    
-    // Check for OAuth2 success message
+  }, [location.search]);
+
+  // Handle OAuth2 success/error messages and load remembered email
+  useEffect(() => {
     if (location.state?.success) {
       showSuccess(location.state.success);
     }
@@ -77,77 +134,67 @@ const Login = () => {
     if (location.state?.error) {
       showError(location.state.error);
     }
-    
-    // Load remembered email
+
     const rememberedEmail = localStorage.getItem('rememberedEmail');
     if (rememberedEmail) {
       setEmail(rememberedEmail);
       setRememberMe(true);
     }
+    // Cleanup legacy plaintext password if present.
+    localStorage.removeItem('rememberedPassword');
   }, [location, showError, showSuccess]);
 
-  const handleLogin = async (e) => {
+  // Validate email format
+  const isValidEmail = (email) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(String(email).toLowerCase());
+  };
+
+  // Handle forgot password form
+  const _handleForgotPassword = (e) => {
     e.preventDefault();
+    setCurrentView('forgot-password');
     setError('');
     setSuccess('');
+  };
+
+  const handleSendResetCode = async () => {
+    if (!email) {
+      setError('Please enter your email address');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+    
     setIsLoading(true);
+    setError('');
+    setSuccess('');
     
     try {
-      const payload = {
-        email: (email || '').trim().toLowerCase(),
-        password: (password || '').trim()
-      };
-      const res = await axios.post(`${API_URL}/auth/login`, payload);
-      
-      if (res.data.otpRequired) {
-        showSuccess('OTP sent to your email! Please check your inbox.');
-        setShowOtp(true);
-      } else if (res.data.accessToken || res.data.token) {
-        const token = res.data.accessToken || res.data.token;
-        showSuccess('Login successful! Redirecting...');
-        
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(res.data.user));
-        
-        if (rememberMe) {
-          localStorage.setItem('rememberedEmail', email);
-        } else {
-          localStorage.removeItem('rememberedEmail');
-        }
-        
-        setTimeout(() => {
-          const userRole = res.data.user?.role || 'candidate';
-          if (userRole === 'admin') {
-            navigate('/admin/dashboard');
-          } else if (userRole === 'recruiter') {
-            navigate('/recruiter/dashboard');
-          } else {
-            navigate('/candidate/dashboard');
-          }
-        }, 1500);
+      const response = await axios.post(`${API_BASE_URL}/auth/forgot-password`, { email });
+      if (response.data.message) {
+        setResetCodeSent(true);
+        setSuccess('OTP sent successfully to your email');
+      } else {
+        setError(response.data.message || 'Failed to send reset code. Please try again.');
       }
     } catch (error) {
-      console.error('Login error:', error);
-      if (error.response?.status === 401) {
-        const msg = error.response?.data?.message || 'Invalid email or password. Please try again.';
-        // Common Spring messages for disabled account
-        const friendly = /disabled|User is disabled/i.test(msg)
-          ? 'Your account is not verified/enabled yet. Please verify via OTP or contact support.'
-          : msg;
-        showError(friendly);
-      } else if (error.response?.data?.message) {
-        showError(error.response.data.message);
-      } else {
-        showError('Login failed. Please try again.');
-      }
+      setError(error.response?.data?.message || 'An error occurred. Please try again later.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleOtpVerify = async () => {
+  const handleResetPassword = async () => {
     if (!otp || otp.length !== 6) {
-      showError('Please enter a valid 6-digit OTP.');
+      setError('Please enter a valid 6-digit code');
+      return;
+    }
+    
+    if (!password || password.length < 6) {
+      setError('Password must be at least 6 characters long');
       return;
     }
     
@@ -155,341 +202,397 @@ const Login = () => {
     setError('');
     
     try {
-      const res = await axios.post(`${API_URL}/auth/verify-login-otp`, { email: (email || '').trim().toLowerCase(), otp: (otp || '').trim() });
+      const response = await axios.post(`${API_BASE_URL}/auth/reset-password`, { 
+        email, 
+        otp,
+        newPassword: password
+      });
       
-      if (res.data.accessToken || res.data.token) {
-        const token = res.data.accessToken || res.data.token;
-        showSuccess('OTP verified successfully! Redirecting...');
+      if (response.data.message) {
+        setSuccess('Password reset successful. You can now log in with your new password.');
         
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(res.data.user));
-        
-        if (rememberMe) {
-          localStorage.setItem('rememberedEmail', email);
-        }
-        
+        // Clear all fields and show login form
         setTimeout(() => {
-          const userRole = res.data.user?.role || 'candidate';
-          if (userRole === 'admin') {
-            navigate('/admin/dashboard');
-          } else if (userRole === 'recruiter') {
-            navigate('/recruiter/dashboard');
-          } else {
-            navigate('/candidate/dashboard');
-          }
-        }, 1500);
+          setCurrentView('login');
+          setResetCodeSent(false);
+          setOtp('');
+          setPassword('');
+          setError('');
+          setSuccess('');
+        }, 2000);
+      } else {
+        setError(response.data.message || 'Failed to reset password. Please try again.');
       }
     } catch (error) {
-      console.error('OTP verification error:', error);
-      showError(error.response?.data?.message || 'Invalid OTP. Please try again.');
+      setError(error.response?.data?.message || 'An error occurred. Please try again later.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Load remembered email on component mount
-  useEffect(() => {
-    const rememberedEmail = localStorage.getItem('rememberedEmail');
-    if (rememberedEmail) {
-      setEmail(rememberedEmail);
-      setRememberMe(true);
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      return;
     }
-  }, []);
+    
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+    
+    try {
+      // Normalize email to match backend expectations
+      const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPassword = password.trim();
+      
+      console.log('Sending login request to:', `${API_BASE_URL}/auth/login`);
+      console.log('Request payload:', { email: normalizedEmail, password: '***' });
+      
+      const response = await axios({
+        method: 'post',
+        url: `${API_BASE_URL}/auth/login`,
+        data: {
+          email: normalizedEmail,
+          password: normalizedPassword
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        withCredentials: true
+      });
+      
+      console.log('Login response status:', response.status);
+      console.log('Login response headers:', JSON.stringify(response.headers, null, 2));
+      console.log('Raw login response data:', JSON.stringify(response.data, null, 2));
+      
+      // Handle successful login
+      if (response.data) {
+        handleLoginSuccess(response.data);
+      } else {
+        // If we get here, the response format is unexpected
+        console.error('Unexpected login response format:', response);
+        setError('Received an unexpected response from the server. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('Login error:', error);
+      
+      // Handle different types of errors
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        const { status, data } = error.response;
+        
+        if (status === 401) {
+          if (data.message === 'User is disabled or not verified') {
+            setError('Your account is not verified or has been disabled. Please contact support.');
+          } else if (data.message === 'Invalid email or password') {
+            setError('Invalid email or password. Please try again.');
+          } else if (data.message) {
+            setError(data.message);
+          } else {
+            setError('Invalid credentials. Please check your email and password.');
+          }
+        } else if (status === 400) {
+          setError(data.message || 'Invalid request. Please check your input and try again.');
+        } else if (status === 500) {
+          setError('Server error. Please try again later.');
+        } else {
+          setError(`Error: ${status} - ${data.message || 'An error occurred'}`);
+        }
+      } else if (error.request) {
+        // The request was made but no response was received
+        setError('Unable to connect to the server. Please check your internet connection.');
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        setError('An unexpected error occurred. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  return (
-    <div className="auth-container login-page">
-      {/* Left: Form */}
-      <div className="left-box">
-        <div className="auth-card">
-          <div className="card-header">
-            <h2 className="card-title">Welcome Back!!</h2>
-          </div>
-
-          <form onSubmit={showOtp ? (e) => { e.preventDefault(); handleOtpVerify(); } : handleLogin} className="auth-form">
-            <div className="input-group">
-              <div className="input-container">
-                <input 
-                  id="loginEmail" 
-                  type="email"
-                  value={email} 
-                  onChange={e=>setEmail(e.target.value)} 
-                  placeholder=" " 
-                  required 
-                  className={email ? 'has-value' : ''}
-                />
-                <label htmlFor="loginEmail">Email</label>
-              </div>
-
-              {!showOtp && (
-                <div className="input-container password-container">
-                  <input 
-                    id="loginPassword" 
-                    type={showPassword ? 'text' : 'password'} 
-                    value={password} 
-                    onChange={e=>setPassword(e.target.value)} 
-                    placeholder=" " 
-                    required 
-                    className={password ? 'has-value' : ''}
-                  />
-                  <label htmlFor="loginPassword">Password</label>
-                  <button 
-                    type="button" 
-                    className="password-eye-toggle-btn"
-                    onClick={() => setShowPassword(!showPassword)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? eyeOffIcon : eyeIcon}
-                  </button>
-                </div>
-              )}
-
-              {showOtp && (
-                <div className="input-container otp-container">
-                  <input 
-                    id="loginOtp" 
-                    value={otp} 
-                    onChange={e=>setOtp(e.target.value)} 
-                    placeholder=" " 
-                    required 
-                    maxLength="6"
-                    className={otp ? 'has-value' : ''}
-                  />
-                  <label htmlFor="loginOtp">Enter 6-digit OTP</label>
-                </div>
-              )}
-            </div>
-
-            {!showOtp && (
-              <div className="form-options">
-                <Link to="/forgot-password" className="forgot-password-link">
-                  Forgot Password?
-                </Link>
-              </div>
-            )}
-
-            <button 
-              type="submit" 
-              className={`auth-btn ${isLoading ? 'loading' : ''}`}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <div className="btn-spinner"></div>
-                  <span>{showOtp ? 'Verifying...' : 'Signing in...'}</span>
-                </>
-              ) : (
-                <>
-                  <span>Login</span>
-                </>
-              )}
-            </button>
-
-            {success && (
-              <div className="success-message">
-                <div className="success-icon">✅</div>
-                <span>{success}</span>
-              </div>
-            )}
-
-            {error && (
-              <div className="error-message">
-                <div className="error-icon">❌</div>
-                <span>{error}</span>
-              </div>
-            )}
-
-            {!showOtp && (
-              <>
-                <div className="divider">
-                  <span>- or -</span>
-                </div>
-                <div className="social-login-container">
-                  <button 
-                    type="button"
-                    className="social-btn google-btn" 
-                    onClick={() => {
-                      const redirectUri = `${window.location.origin}/oauth2/redirect`;
-                      window.location.href = `${API_URL}/oauth2/authorize/google?redirect_uri=${encodeURIComponent(redirectUri)}`;
-                    }}
-                    title="Continue with Google"
-                  >
-                    {googleLogo}
-                  </button>
-                  <button 
-                    type="button"
-                    className="social-btn github-btn" 
-                    onClick={() => {
-                      const redirectUri = `${window.location.origin}/oauth2/redirect`;
-                      window.location.href = `${API_URL}/oauth2/authorize/github?redirect_uri=${encodeURIComponent(redirectUri)}`;
-                    }}
-                    title="Continue with GitHub"
-                  >
-                    {githubLogo}
-                  </button>
-                  <button 
-                    type="button"
-                    className="social-btn apple-btn"
-                    title="Continue with Apple"
-                  >
-                    {appleLogo}
-                  </button>
-                </div>
-              </>
-            )}
-
-            <div className="auth-nav-link">
-              Don't have an account? <span className="nav-link-btn" onClick={() => navigate('/register')}>Sign up</span>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      {/* Right: Illustration */}
-      <div className="right-box">
-        <div className="illustration-wrap">
-          <div className="right-oval"></div>
-          <img src="/Auth-logo.png" alt="Illustration" className="illustration-img" />
+  const renderForgotPasswordForm = () => (
+    <div className="forgot-password-form">
+      <p style={{ color: 'rgba(255, 255, 255, 0.8)', marginBottom: '1.5rem', textAlign: 'center' }}>
+        {!resetCodeSent ? 'Enter your email to receive a password reset code' : 'Enter the OTP and your new password'}
+      </p>
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        if (!resetCodeSent) {
+          handleSendResetCode();
+        } else {
+          handleResetPassword();
+        }
+      }}>
+        <div className="input-container">
+          <input
+            type="email"
+            id="resetEmail"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email Address"
+            required
+            disabled={resetCodeSent}
+          />
         </div>
         
-        {/* Mobile Form - Duplicate for mobile view */}
-        <div className="mobile-auth-card">
-          <div className="mobile-auth-header">
-            <div className="mobile-logo-section">
-              <h1>Login</h1>
-              <img src="/Auth-logo.png" alt="SmartHireX Logo" className="mobile-auth-logo" />
+        {resetCodeSent && (
+          <>
+            <div className="input-container">
+              <input
+                type="text"
+                id="resetOtp"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                placeholder="Enter 6-digit OTP"
+                required
+                maxLength="6"
+              />
             </div>
-          </div>
-          <div className="card-header">
-            <p className="card-subtitle">Sign in to your account to continue.</p>
-          </div>
-          <form onSubmit={showOtp ? (e) => { e.preventDefault(); handleOtpVerify(); } : handleLogin} className="auth-form">
-            <div className="input-group">
-              <div className="input-container">
-                <input 
-                  id="mobileLoginEmail" 
-                  type="email"
-                  value={email} 
-                  onChange={e=>setEmail(e.target.value)} 
-                  placeholder=" " 
-                  required 
-                  className={email ? 'has-value' : ''}
+            
+            <div className="input-container">
+              <div className="input-with-icon">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="newPassword"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="New Password"
+                  required
                 />
-                <label htmlFor="mobileLoginEmail">Email</label>
+                <div 
+                  className="input-icon"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? <AiOutlineEyeInvisible size={20} /> : <AiOutlineEye size={20} />}
+                </div>
               </div>
-
-              {!showOtp && (
-                <div className="input-container password-container">
-                  <input 
-                    id="mobileLoginPassword" 
-                    type={showPassword ? 'text' : 'password'} 
-                    value={password} 
-                    onChange={e=>setPassword(e.target.value)} 
-                    placeholder=" " 
-                    required 
-                    className={password ? 'has-value' : ''}
-                  />
-                  <label htmlFor="mobileLoginPassword">Password</label>
-                  <button 
-                    type="button" 
-                    className="password-eye-toggle-btn"
-                    onClick={() => setShowPassword(!showPassword)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? eyeOffIcon : eyeIcon}
-                  </button>
-                </div>
-              )}
-
-              {showOtp && (
-                <div className="input-container otp-container">
-                  <input 
-                    id="mobileLoginOtp" 
-                    value={otp} 
-                    onChange={e=>setOtp(e.target.value)} 
-                    placeholder=" " 
-                    required 
-                    maxLength="6"
-                    className={otp ? 'has-value' : ''}
-                  />
-                  <label htmlFor="mobileLoginOtp">Enter 6-digit OTP</label>
-                </div>
-              )}
             </div>
+          </>
+        )}
 
-            {!showOtp && (
-              <div className="form-options">
-                <Link to="/forgot-password" className="forgot-password-link">
-                  Forgot Password?
-                </Link>
-              </div>
-            )}
+        {error && <div className="error-message">{error}</div>}
+        {success && <div className="success-message">{success}</div>}
 
+        <button
+          type="submit"
+          className="auth-btn primary"
+          disabled={isLoading}
+        >
+          {isLoading ? 
+            (resetCodeSent ? 'Resetting...' : 'Sending...') : 
+            (resetCodeSent ? 'Reset Password' : 'Send Reset Code')
+          }
+        </button>
+        
+        {resetCodeSent && (
+          <button
+            type="button"
+            className="auth-btn secondary"
+            onClick={() => {
+              setResetCodeSent(false);
+              setOtp('');
+              setPassword('');
+              setError('');
+              setSuccess('');
+            }}
+            style={{ marginTop: '10px' }}
+          >
+            Back to Email
+          </button>
+        )}
+      </form>
+    </div>
+  );
+
+  const renderLoginForm = () => (
+    <form onSubmit={handleLogin} className="auth-form">
+      {error && <div className="error-message">{error}</div>}
+      {success && <div className="success-message">{success}</div>}
+
+      <div className="input-container">
+        <input 
+          id="loginEmail" 
+          type="email" 
+          value={email} 
+          onChange={e => setEmail(e.target.value)} 
+          placeholder="Email Address" 
+          required 
+        />
+      </div>
+
+      <div className="input-container">
+        <div className="input-with-icon">
+          <input 
+            id="loginPassword" 
+            type={showPassword ? 'text' : 'password'} 
+            value={password} 
+            onChange={e => setPassword(e.target.value)} 
+            placeholder="Password" 
+            required
+          />
+          <div 
+            className="input-icon"
+            onClick={() => setShowPassword(!showPassword)}
+          >
+            {showPassword ? <AiOutlineEyeInvisible size={20} /> : <AiOutlineEye size={20} />}
+          </div>
+        </div>
+      </div>
+      
+      <div className="auth-row">
+        <label className="remember-me">
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            disabled={isLoading}
+          />
+          Remember me
+        </label>
+        
+        <span 
+          className="forgot-btn" 
+          onClick={() => setCurrentView('forgot-password')}
+        >
+          Forgot your password?
+        </span>
+      </div>
+
+      <div>
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="auth-btn primary"
+        >
+          {isLoading ? (
+            <div className="spinner"></div>
+          ) : (
+            'Sign In'
+          )}
+        </button>
+      </div>
+    </form>
+  );
+
+  // Main component render
+  return (
+    <div className={`auth-login-page ${embedded ? 'auth-embedded' : 'auth-full-screen'}`}>
+      {!embedded && (
+        <header className="landing-header">
+          <div 
+            className="site-name clickable" 
+            onClick={() => navigate('/')}
+          >
+            <div className="logo-container">
+              <img 
+                src="/SmarthireX-logo.jpeg" 
+                alt="SmartHireX Logo" 
+                className="logo-image"
+              />
+              <h1>SmartHireX</h1>
+            </div>
+          </div>
+          <div className="header-actions">
             <button 
-              type="submit" 
-              className={`auth-btn ${isLoading ? 'loading' : ''}`}
-              disabled={isLoading}
+              className="header-button register-btn"
+              onClick={() => navigate('/register')}
             >
-              {isLoading ? (
-                <>
-                  <div className="btn-spinner"></div>
-                  <span>{showOtp ? 'Verifying...' : 'Signing in...'}</span>
-                </>
-              ) : (
-                <>
-                  <span>Login</span>
-                </>
-              )}
+              <FaUser size={16} className="button-icon" />
+              <span>Register</span>
             </button>
-
-            {!showOtp && (
+          </div>
+        </header>
+      )}
+      {/* Form Section */}
+      <div className="auth-form-section auth-full-width">
+        <div className="auth-container">
+          <>
+            {currentView === 'login' && (
               <>
-                <div className="divider">
-                  <span>- or -</span>
-                </div>
-                <div className="social-login-container">
-                  <button 
-                    type="button"
-                    className="social-btn google-btn" 
-                    onClick={() => {
-                      const redirectUri = `${window.location.origin}/oauth2/redirect`;
-                      window.location.href = `${API_URL}/oauth2/authorize/google?redirect_uri=${encodeURIComponent(redirectUri)}`;
-                    }}
-                    title="Continue with Google"
-                  >
-                    {googleLogo}
-                  </button>
-                  <button 
-                    type="button"
-                    className="social-btn github-btn" 
-                    onClick={() => {
-                      const redirectUri = `${window.location.origin}/oauth2/redirect`;
-                      window.location.href = `${API_URL}/oauth2/authorize/github?redirect_uri=${encodeURIComponent(redirectUri)}`;
-                    }}
-                    title="Continue with GitHub"
-                  >
-                    {githubLogo}
-                  </button>
-                  <button 
-                    type="button"
-                    className="social-btn apple-btn"
-                    title="Continue with Apple"
-                  >
-                    {appleLogo}
-                  </button>
+                <div className="auth-card">
+                  <div className="card-header">
+                    <h2 className="card-title">Sign In</h2>
+                  </div>
+                  {renderLoginForm()}
+                  <div className="social-divider">
+                    <span>or</span>
+                  </div>
+                  <div className="social-buttons">
+                    <button 
+                      type="button"
+                      className="social-btn google-btn" 
+                      onClick={() => {
+                        // Set login context (opposite of registration)
+                        sessionStorage.setItem('oauth2_context', 'login');
+                        const redirectUri = `${window.location.origin}/oauth2/redirect`;
+                        window.location.href = `${API_BASE_URL}/oauth2/authorize/google?redirect_uri=${encodeURIComponent(redirectUri)}`;
+                      }}
+                      title="Continue with Google"
+                    >
+                      {googleLogo}
+                    </button>
+                    <button 
+                      type="button"
+                      className="social-btn github-btn" 
+                      onClick={() => {
+                        // Set login context (opposite of registration)
+                        sessionStorage.setItem('oauth2_context', 'login');
+                        const redirectUri = `${window.location.origin}/oauth2/redirect`;
+                        window.location.href = `${API_BASE_URL}/oauth2/authorize/github?redirect_uri=${encodeURIComponent(redirectUri)}`;
+                      }}
+                      title="Continue with GitHub"
+                    >
+                      {githubLogo}
+                    </button>
+                  </div>
+                  
+                  {/* Navigation Links */}
+                  <div className="auth-nav-links">
+                    <div className="auth-nav-link">
+                      Don't have an account?{' '}
+                      <span 
+                        className="nav-link-btn text-link" 
+                        onClick={handleRegisterClick}
+                      >
+                        Register here
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
 
-            <div className="auth-nav-link">
-              Don't have an account? <span className="nav-link-btn" onClick={() => navigate('/register')}>Sign up</span>
-            </div>
-          </form>
+            {currentView === 'forgot-password' && (
+              <div className="auth-card">
+                <div className="card-header">
+                  <h2 className="card-title">Reset Password</h2>
+                </div>
+                {renderForgotPasswordForm()}
+                
+                {/* Navigation Links */}
+                <div className="auth-nav-links">
+                  <div className="auth-nav-link">
+                    Remember your password?{' '}
+                    <span 
+                      className="nav-link-btn text-link" 
+                      onClick={() => setCurrentView('login')}
+                    >
+                      Back to Sign In
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         </div>
       </div>
     </div>
   );
-}
+};
 
 export default Login;

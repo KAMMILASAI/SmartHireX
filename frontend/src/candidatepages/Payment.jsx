@@ -3,9 +3,15 @@ import './Payment.css';
 import axios from 'axios';
 import { useToast } from '../contexts/ToastContext';
 import { RiQrCodeLine } from 'react-icons/ri';
+import { API_BASE_URL } from '../config';
+import { useNavigate } from 'react-router-dom';
+
+// Fallback for Vite environment variables
+const envBase = import.meta.env.VITE_API_BASE_URL || API_BASE_URL;
 
 export default function Payment() {
   // Design-only payment screen
+  const navigate = useNavigate();
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('qrcode'); // qrcode | upi | card
@@ -13,6 +19,8 @@ export default function Payment() {
   const [qrGenerated, setQrGenerated] = useState(false);
   const [paid, setPaid] = useState(false);
   const [txnId, setTxnId] = useState('');
+  const [qrError, setQrError] = useState(false);
+  const [qrServiceIndex, setQrServiceIndex] = useState(0); // 0: primary, 1: backup1, 2: backup2
   // Design-only fields for UPI/Card
   const [upiId, setUpiId] = useState('');
   const [cardName, setCardName] = useState('');
@@ -21,55 +29,63 @@ export default function Payment() {
   const [cardCvv, setCardCvv] = useState('');
   const { showInfo, showSuccess } = useToast();
 
+  // Fetch UPI ID from backend configuration
   useEffect(() => {
-    // Prefill UPI ID from backend config with robust fallbacks
-    const tryFetch = async () => {
-      const envOrigin = import.meta.env.VITE_API_ORIGIN;
-      const envBase = import.meta.env.VITE_API_BASE_URL;
-      let origin = envOrigin;
+    const fetchSupportUpi = async () => {
       try {
-        if (!origin && envBase) origin = new URL(envBase).origin;
-      } catch {}
-      if (!origin) {
-        // dev fallback: replace Vite port 5173 with 8080
-        origin = typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':8080') : 'http://localhost:8080';
-      }
-      const candidates = [
-        `${origin}/config/support-upi`,
-        `${origin}/api/config/support-upi`,
-        `http://localhost:8080/config/support-upi`,
-        `http://localhost:8080/api/config/support-upi`
-      ];
-      for (const url of candidates) {
-        try {
-          const res = await axios.get(url);
-          const v = res?.data?.upi || '';
-          if (v) { setSupportUpi(v); break; }
-        } catch {}
+        const response = await axios.get(`${envBase}/config/support-upi`);
+        if (response.data && response.data.upi) {
+          setSupportUpi(response.data.upi);
+        } else {
+          setSupportUpi('');
+          setError('Support UPI is not configured. Please contact admin.');
+        }
+      } catch (error) {
+        console.error('Failed to fetch support UPI:', error);
+        setSupportUpi('');
+        setError('Failed to load support UPI. Please try again later.');
       }
     };
-    tryFetch();
+    
+    fetchSupportUpi();
   }, []);
 
   // Reset generated QR when inputs or tab change
   useEffect(() => {
     setQrGenerated(false);
+    setQrServiceIndex(0); // Reset to primary QR service
+    setQrError(false);
   }, [amount, activeTab]);
 
   const upiUri = (id, amt) => {
     const pn = 'SmartHireX';
-    const tn = 'Support Payment';
-    return `upi://pay?pa=${encodeURIComponent(id)}&pn=${encodeURIComponent(pn)}&am=${encodeURIComponent(amt || '')}&cu=INR&tn=${encodeURIComponent(tn)}`;
+    const tn = 'SmartHireX Support Payment';
+    const mc = '1234'; // Merchant code (optional but helps with compatibility)
+    
+    // Standard UPI URI format for better app compatibility
+    return `upi://pay?pa=${encodeURIComponent(id)}&pn=${encodeURIComponent(pn)}&tn=${encodeURIComponent(tn)}&am=${encodeURIComponent(amt || '')}&cu=INR&mc=${mc}`;
   };
   const effectiveUpi = (supportUpi || '').trim();
+  
+  // Generate QR code with better compatibility and error correction
   const qrUrl = Number(amount) > 0 && effectiveUpi
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUri(effectiveUpi, amount))}`
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=300x300&ecc=M&format=png&data=${encodeURIComponent(upiUri(effectiveUpi, amount))}`
+    : '';
+  
+  // Alternative QR service for better compatibility (backup)
+  const qrUrlBackup = Number(amount) > 0 && effectiveUpi
+    ? `https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=${encodeURIComponent(upiUri(effectiveUpi, amount))}&choe=UTF-8`
+    : '';
+  
+  // Third backup QR service
+  const qrUrlBackup2 = Number(amount) > 0 && effectiveUpi
+    ? `https://quickchart.io/qr?text=${encodeURIComponent(upiUri(effectiveUpi, amount))}&size=300`
     : '';
 
   const startPay = () => {
     if (Number(amount) <= 0) return setError('Enter amount > 0');
     setError('');
-    showInfo('Payments are coming soon. This feature will be available in a future update.', 3000);
+    setError('Payment method not allowed. Please use QR Code payment only.');
   };
 
   const markPaid = async () => {
@@ -78,7 +94,7 @@ export default function Payment() {
     setError('');
     try {
       const token = localStorage.getItem('token');
-      const resp = await fetch('http://localhost:8080/api/payments/mark-paid', {
+      const resp = await fetch(`${envBase}${envBase.endsWith('/') ? '' : '/'}payments/mark-paid`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -92,6 +108,12 @@ export default function Payment() {
       }
       setPaid(true);
       showSuccess('Payment recorded successfully.');
+      
+      // Navigate back to previous page after successful payment
+      setTimeout(() => {
+        navigate(-1); // Go back to previous page
+      }, 2000); // Wait 2 seconds to show success message
+      
     } catch (e) {
       setError('Failed to record payment. Please login and try again.');
     }
@@ -123,17 +145,12 @@ export default function Payment() {
               {activeTab === 'qrcode' && (
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
                   <button
-                    className="pay-btn"
+                    className={`pay-btn generate-qr ${qrGenerated ? 'success' : ''}`}
                     onClick={()=>setQrGenerated(true)}
                     disabled={!(Number(amount) > 0 && !!effectiveUpi) || (paid && activeTab==='qrcode')}
-                  >Generate QR</button>
-                  {qrGenerated && qrUrl ? (
-                    <img src={qrUrl} alt="UPI QR" className="payment-qr" />
-                  ) : (
-                    <div className="qr-box" aria-label="Static QR preview" />
-                  )}
+                  >{qrGenerated ? 'QR Generated ✓' : 'Generate QR'}</button>
                   <small style={{ color: '#94a3b8' }}>
-                    {effectiveUpi ? 'Scan this QR with any UPI app' : 'Support UPI not configured. Please set support.upi in backend.'}
+                    {effectiveUpi ? 'QR Code will appear in top right corner' : 'Support UPI not configured. Please set support.upi in backend.'}
                   </small>
                   <div className="amount-row">
                     <input
@@ -206,6 +223,39 @@ export default function Payment() {
           </div>
 
           <div className="checkout-right">
+            <div className="qr-section-right">
+              {qrGenerated && (qrUrl || qrUrlBackup || qrUrlBackup2) ? (
+                <div>
+                  <img 
+                    src={qrServiceIndex === 0 ? qrUrl : qrServiceIndex === 1 ? qrUrlBackup : qrUrlBackup2} 
+                    alt="UPI QR Code" 
+                    className="payment-qr-right"
+                    onError={() => {
+                      if (qrServiceIndex === 0 && qrUrlBackup) {
+                        setQrServiceIndex(1);
+                      } else if (qrServiceIndex === 1 && qrUrlBackup2) {
+                        setQrServiceIndex(2);
+                      } else {
+                        setQrError(true);
+                      }
+                    }}
+                    onLoad={() => setQrError(false)}
+                  />
+                  {qrError && (
+                    <div style={{ color: '#ff6b6b', fontSize: '0.8rem', marginTop: '0.5rem', textAlign: 'center' }}>
+                      QR Code failed to load. Please try refreshing.
+                    </div>
+                  )}
+                  <div style={{ color: '#94a3b8', fontSize: '0.75rem', marginTop: '0.5rem', textAlign: 'center' }}>
+                    Scan with any UPI app (PhonePe, GPay, Paytm)
+                  </div>
+                </div>
+              ) : (
+                <div className="qr-box-right" aria-label="QR Code will appear here">
+                  Generate QR to scan
+                </div>
+              )}
+            </div>
             <div className="section-title">Summary</div>
             <div className="summary-row"><span>Amount</span><span>₹{Number(amount||0)}</span></div>
             <div className="summary-row"><span>Platform Fee</span><span>₹0</span></div>
@@ -214,14 +264,14 @@ export default function Payment() {
             <div className="summary-row total"><span>Total</span><span>₹{Number(amount||0)}</span></div>
             <div className="checkout-actions">
               {activeTab !== 'qrcode' && (
-                <button className="pay-btn" onClick={startPay} disabled={paid && activeTab==='qrcode'}>Pay Now</button>
+                <button className="pay-btn not-allowed" onClick={startPay}>Not Allowed</button>
               )}
               {activeTab === 'qrcode' && (
                 <button
-                  className="pay-btn"
+                  className={`pay-btn paid-confirm ${paid ? 'success' : ''}`}
                   onClick={markPaid}
                   disabled={!(qrGenerated && !!qrUrl) || (paid && activeTab==='qrcode')}
-                >I've Paid</button>
+                >{paid ? 'Payment Confirmed ✓' : "I've Paid"}</button>
               )}
               <button className="cancel-btn" onClick={()=>window.history.back()}>Cancel</button>
             </div>

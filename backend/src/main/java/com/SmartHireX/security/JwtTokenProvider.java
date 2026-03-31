@@ -1,6 +1,5 @@
 package com.SmartHireX.security;
 
-import com.SmartHireX.config.JwtProperties;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.slf4j.Logger;
@@ -9,6 +8,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
+
+import com.SmartHireX.config.JwtProperties;
+import com.SmartHireX.security.UserPrincipal;
 
 import java.security.Key;
 import java.util.Date;
@@ -28,9 +30,14 @@ public class JwtTokenProvider {
 
     public String generateToken(Authentication authentication) {
         String username;
+        Long userId = null;
         Object principal = authentication.getPrincipal();
         
-        if (principal instanceof UserDetails) {
+        if (principal instanceof UserPrincipal) {
+            UserPrincipal userPrincipal = (UserPrincipal) principal;
+            username = userPrincipal.getEmail();
+            userId = userPrincipal.getId();
+        } else if (principal instanceof UserDetails) {
             UserDetails userPrincipal = (UserDetails) principal;
             username = userPrincipal.getUsername();
         } else if (principal instanceof org.springframework.security.oauth2.core.user.OAuth2User) {
@@ -43,11 +50,17 @@ public class JwtTokenProvider {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtProperties.getExpirationMs());
 
-        return Jwts.builder()
+        JwtBuilder builder = Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(now)
-                .setExpiration(expiryDate)
-                .signWith(key, SignatureAlgorithm.HS256)
+                .setExpiration(expiryDate);
+        
+        // Add user ID to claims if available
+        if (userId != null) {
+            builder.claim("id", userId);
+        }
+        
+        return builder.signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 

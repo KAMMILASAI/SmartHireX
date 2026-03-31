@@ -1,15 +1,18 @@
 package com.SmartHireX.security;
 
-import com.SmartHireX.entity.User;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.oauth2.core.user.OAuth2User;
+
+import com.SmartHireX.entity.User;
 
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Collections;
+import java.util.Map;
 
-public class UserPrincipal implements UserDetails {
+public class UserPrincipal implements UserDetails, OAuth2User {
     private static final long serialVersionUID = 1L;
 
     private final Long id;
@@ -18,6 +21,7 @@ public class UserPrincipal implements UserDetails {
     private final String password;
     private final Collection<? extends GrantedAuthority> authorities;
     private final boolean enabled;
+    private final Map<String, Object> attributes;
 
     public UserPrincipal(Long id, String name, String email, String password,
                         Collection<? extends GrantedAuthority> authorities, boolean enabled) {
@@ -27,11 +31,24 @@ public class UserPrincipal implements UserDetails {
         this.password = password;
         this.authorities = authorities;
         this.enabled = enabled;
+        this.attributes = Collections.emptyMap();
+    }
+
+    public UserPrincipal(Long id, String name, String email, String password,
+                        Collection<? extends GrantedAuthority> authorities, boolean enabled,
+                        Map<String, Object> attributes) {
+        this.id = id;
+        this.name = name;
+        this.email = email;
+        this.password = password;
+        this.authorities = authorities;
+        this.enabled = enabled;
+        this.attributes = attributes;
     }
 
     public static UserPrincipal create(User user) {
         // Create a single authority based on user's role
-        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + user.getRole().toUpperCase());
+        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + user.getRole().name());
         
         return new UserPrincipal(
                 user.getId(),
@@ -42,13 +59,34 @@ public class UserPrincipal implements UserDetails {
                 user.isVerified()
         );
     }
+
+    public static UserPrincipal create(User user, java.util.Map<String, Object> attributes) {
+        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + user.getRole().name());
+        
+        return new UserPrincipal(
+                user.getId(),
+                user.getFirstName() + " " + user.getLastName(),
+                user.getEmail(),
+                user.getPassword(),
+                Collections.singletonList(authority),
+                user.isVerified(),
+                attributes
+        );
+    }
+
+    // OAuth2User methods
+    @Override
+    public Map<String, Object> getAttributes() {
+        return attributes;
+    }
+
+    @Override
+    public String getName() {
+        return name;
+    }
     
     public Long getId() {
         return id;
-    }
-    
-    public String getName() {
-        return name;
     }
     
     public String getFirstName() {

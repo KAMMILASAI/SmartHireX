@@ -4,17 +4,32 @@ import '../candidatepages/Payment.css';
 
 export default function PaymentConfirm() {
   const navigate = useNavigate();
+  
+  const handleOverlayClick = (e) => {
+    if (e.target === e.currentTarget) {
+      window.history.back();
+    }
+  };
+
   return (
-    <div className="pay-overlay">
-      <div className="pay-popup" style={{ textAlign: 'center' }}>
-        <h2>Optional Support Payment</h2>
-        <p>
-          If SmartHireX helped your hiring process, you can contribute any amount you like!
-          <br />Payment is 100% optional – but always appreciated 😊
-        </p>
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1.2rem' }}>
-          <button onClick={() => navigate('/recruiter/payment')} style={{ flex: 1 }}>Proceed</button>
-          <button onClick={() => window.history.back()} style={{ flex: 1, background: '#666' }}>Cancel</button>
+    <div className="payment-popup-overlay" onClick={handleOverlayClick}>
+      <div className="payment-popup-modal">
+        <div className="popup-header">
+          <h2 className="popup-title">Optional Support Payment</h2>
+          <button className="popup-close" onClick={()=>window.history.back()}>×</button>
+        </div>
+        <div className="popup-content">
+          <p className="popup-message">
+            If SmartHireX helped you land a job, chip in anything you like! Payment is optional but highly motivating 😊
+          </p>
+        </div>
+        <div className="popup-actions">
+          <button className="popup-btn primary" onClick={()=>navigate('/recruiter/payment')}>
+            Proceed
+          </button>
+          <button className="popup-btn secondary" onClick={()=>window.history.back()}>
+            Cancel
+          </button>
         </div>
       </div>
     </div>

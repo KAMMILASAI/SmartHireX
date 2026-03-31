@@ -3,8 +3,9 @@ package com.SmartHireX.model;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
-import com.SmartHireX.entity.User;
+
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.SmartHireX.entity.User;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Entity
@@ -51,7 +52,21 @@ public class JobPosting {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
-    private Instant expiresAt;
+    // Timeline for hiring process
+    private Instant startDate;
+    private Instant endDate;
+    
+    // Auto-shortlist configuration
+    private Boolean autoShortlistEnabled = false;
+    private Instant autoShortlistTime;
+    private Integer autoShortlistCount = 0;
+
+    // Job visibility settings
+    @Column(nullable = false)
+    private Boolean isPublic = true;
+
+    // Access code for private jobs
+    private String accessCode;
 
     @Column(unique = true, nullable = false, updatable = false)
     private String linkId;
@@ -188,12 +203,36 @@ public class JobPosting {
         this.createdAt = createdAt;
     }
 
-    public Instant getExpiresAt() {
-        return expiresAt;
+    public Instant getStartDate() {
+        return startDate;
     }
 
-    public void setExpiresAt(Instant expiresAt) {
-        this.expiresAt = expiresAt;
+    public void setStartDate(Instant startDate) {
+        this.startDate = startDate;
+    }
+
+    public Instant getEndDate() {
+        return endDate;
+    }
+
+    public void setEndDate(Instant endDate) {
+        this.endDate = endDate;
+    }
+
+    public Boolean getIsPublic() {
+        return isPublic;
+    }
+
+    public void setIsPublic(Boolean isPublic) {
+        this.isPublic = isPublic;
+    }
+
+    public String getAccessCode() {
+        return accessCode;
+    }
+
+    public void setAccessCode(String accessCode) {
+        this.accessCode = accessCode;
     }
 
     public String getLinkId() {
@@ -210,5 +249,31 @@ public class JobPosting {
 
     public void setJobCode(String jobCode) {
         this.jobCode = jobCode;
+    }
+
+    // Removed getShortlistEndTime and setShortlistEndTime - using autoShortlistTime instead
+
+    public Boolean getAutoShortlistEnabled() {
+        return autoShortlistEnabled;
+    }
+
+    public void setAutoShortlistEnabled(Boolean autoShortlistEnabled) {
+        this.autoShortlistEnabled = autoShortlistEnabled;
+    }
+
+    public Instant getAutoShortlistTime() {
+        return autoShortlistTime;
+    }
+
+    public void setAutoShortlistTime(Instant autoShortlistTime) {
+        this.autoShortlistTime = autoShortlistTime;
+    }
+
+    public Integer getAutoShortlistCount() {
+        return autoShortlistCount;
+    }
+
+    public void setAutoShortlistCount(Integer autoShortlistCount) {
+        this.autoShortlistCount = autoShortlistCount;
     }
 }

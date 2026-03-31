@@ -2,12 +2,16 @@ package com.SmartHireX.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
 @Data
+@Getter
+@Setter
 @Entity
 @Table(name = "recruiter_profiles")
 public class RecruiterProfile {
@@ -35,7 +39,10 @@ public class RecruiterProfile {
     @Column(length = 200)
     private String location;
 
-    private Integer numEmployees;
+    private String numEmployees;
+
+    @Column(columnDefinition = "TEXT")
+    private String bio;
 
     @Column(length = 500)
     private String image;

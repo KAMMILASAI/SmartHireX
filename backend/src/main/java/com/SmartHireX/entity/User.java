@@ -5,11 +5,15 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+
+import com.SmartHireX.security.oauth2.AuthProvider;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
@@ -17,6 +21,8 @@ import java.util.Collection;
 import java.util.Collections;
 
 @Data
+@Getter
+@Setter
 @Entity
 @Table(name = "users")
 public class User implements UserDetails {
@@ -41,19 +47,27 @@ public class User implements UserDetails {
     @Size(max = 15)
     private String phone;
 
+    @Size(max = 255)
+    private String website;
+
     @Size(max = 100)
     private String password;
 
-    @Size(max = 50)
-    private String role = "candidate";
+    @Enumerated(EnumType.STRING)
+    private Role role = Role.CANDIDATE;
+
+    // OAuth2 fields
+    @Enumerated(EnumType.STRING)
+    private AuthProvider provider = AuthProvider.LOCAL;
+    
+    private String providerId;
+    
+    private String imageUrl;
 
     // Recruiter profile fields (optional)
     private boolean verified = false;
     
     private boolean emailVerified = false;
-    
-    @Size(max = 50)
-    private String oAuth2Provider;
 
 
     @CreationTimestamp
@@ -66,7 +80,7 @@ public class User implements UserDetails {
     // UserDetails methods
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
+        return Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }
 
     @Override

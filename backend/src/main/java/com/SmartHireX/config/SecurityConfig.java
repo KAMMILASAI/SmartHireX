@@ -1,11 +1,7 @@
 package com.SmartHireX.config;
 
-import com.SmartHireX.security.JwtAuthenticationEntryPoint;
-import com.SmartHireX.security.JwtAuthenticationFilter;
-import com.SmartHireX.security.OAuth2.CustomOAuth2UserService;
-import com.SmartHireX.security.OAuth2.OAuth2AuthenticationFailureHandler;
-import com.SmartHireX.security.OAuth2.OAuth2AuthenticationSuccessHandler;
-import com.SmartHireX.security.OAuth2.HttpCookieOAuth2AuthorizationRequestRepository;
+import java.util.Arrays;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,7 +19,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import java.util.List;
+
+import com.SmartHireX.security.JwtAuthenticationEntryPoint;
+import com.SmartHireX.security.JwtAuthenticationFilter;
+import com.SmartHireX.security.oauth2.CustomOAuth2UserService;
+import com.SmartHireX.security.oauth2.HttpCookieOAuth2AuthorizationRequestRepository;
+import com.SmartHireX.security.oauth2.OAuth2AuthenticationFailureHandler;
+import com.SmartHireX.security.oauth2.OAuth2AuthenticationSuccessHandler;
 
 
 @Configuration
@@ -78,12 +80,11 @@ public class SecurityConfig {
                 auth.requestMatchers(
                     "/auth/send-registration-otp",
                     "/auth/verify-registration-otp",
-                    "/auth/send-login-otp",
-                    "/auth/verify-login-otp",
                     "/auth/register",
                     "/auth/login",
                     "/auth/forgot-password",
-                    "/auth/reset-password"
+                    "/auth/reset-password",
+                    "/auth/get-started"
                 ).permitAll();
                 
                 // OAuth2 endpoints
@@ -100,12 +101,19 @@ public class SecurityConfig {
                     "/",
                     "/error",
                     "/favicon.ico",
+                    "/health",
                     // Config public endpoints
                     "/config/support-upi",
+                    // Contact form endpoint (public access)
+                    "/contact",
                     // Public job apply endpoints (context path /api is stripped)
                     "/jobs/**",
                     // Presence endpoints for online counter
-                    "/presence/**"
+                    "/presence/**",
+                    // WebSocket endpoints
+                    "/ws/**",
+                    // Judge endpoint for code execution
+                    "/judge"
                 ).permitAll();
                 
                 // Static resources
@@ -153,15 +161,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(
-            "https://smarthirex.netlify.app",
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://localhost:8080"
-        ));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setExposedHeaders(List.of("Authorization", "Content-Type"));
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173", "http://127.0.0.1:5173"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setExposedHeaders(Arrays.asList("Authorization"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
         

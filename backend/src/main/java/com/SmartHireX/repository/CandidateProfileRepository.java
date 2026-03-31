@@ -1,11 +1,12 @@
 package com.SmartHireX.repository;
 
-import com.SmartHireX.entity.CandidateProfile;
-import com.SmartHireX.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.SmartHireX.entity.CandidateProfile;
+import com.SmartHireX.entity.User;
 
 import java.util.Optional;
 

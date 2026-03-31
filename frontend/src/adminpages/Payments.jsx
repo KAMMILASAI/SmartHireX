@@ -1,12 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 import './AdminPayments.css';
 import { FiTrash2 } from 'react-icons/fi';
+import { useToast } from '../contexts/ToastContext';
+import ConfirmModal from '../components/ConfirmModal';
 
 const Payments = () => {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteLoading, setDeleteLoading] = useState(null);
+  const { showSuccess, showError } = useToast();
+
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    id: null
+  });
+
+  const closeConfirmModal = () => setConfirmModal({ isOpen: false, id: null });
 
   useEffect(() => {
     fetchPayments();
@@ -15,8 +27,14 @@ const Payments = () => {
   const fetchPayments = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:8080/api/admin/payments', {
-        headers: { Authorization: `Bearer ${token}` }
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+      const response = await axios.get(`${API_BASE_URL}/admin/payments`, {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        }
       });
       setList(response.data);
     } catch (error) {
@@ -34,8 +52,14 @@ const Payments = () => {
     setDeleteLoading(paymentId);
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:8080/api/admin/payments/${paymentId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      if (!token) {
+        throw new Error('Authentication required');
+      }
+      await axios.delete(`${API_BASE_URL}/admin/payments/${paymentId}`, {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        }
       });
       
       // Remove from local state

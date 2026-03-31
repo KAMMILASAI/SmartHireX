@@ -1,10 +1,10 @@
 package com.SmartHireX.service;
 
+import java.util.Optional;
+
 import com.SmartHireX.dto.request.ProfileUpdateRequest;
 import com.SmartHireX.dto.request.RegisterRequest;
 import com.SmartHireX.entity.User;
-
-import java.util.Optional;
 
 public interface UserService {
     

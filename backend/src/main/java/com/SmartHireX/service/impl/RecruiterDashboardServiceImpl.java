@@ -1,77 +1,123 @@
 package com.SmartHireX.service.impl;
 
-import com.SmartHireX.service.RecruiterDashboardService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import com.SmartHireX.entity.Role;
+import com.SmartHireX.entity.User;
+import com.SmartHireX.model.JobPosting;
+import com.SmartHireX.repository.ChatRepository;
+import com.SmartHireX.repository.JobRepository;
+import com.SmartHireX.repository.RecruiterProfileRepository;
+import com.SmartHireX.repository.UserRepository;
+import com.SmartHireX.service.RecruiterDashboardService;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class RecruiterDashboardServiceImpl implements RecruiterDashboardService {
-    
-    private final Random random = new Random();
-    private final String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+    @Autowired private UserRepository userRepository;
+    @Autowired private JobRepository jobRepository;
+    @Autowired private ChatRepository chatRepository;
+    @Autowired private RecruiterProfileRepository recruiterProfileRepository;
+
+    private User getCurrentRecruiter() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) return null;
+        return userRepository.findByEmailIgnoreCase(auth.getName()).orElse(null);
+    }
 
     @Override
     public long getTotalCandidates() {
-        // Return a random number between 100 and 1000 for demo
-        return random.nextInt(901) + 100;
+        // Count all users with CANDIDATE role
+        return userRepository.findAll().stream()
+            .filter(u -> u.getRole() == Role.CANDIDATE)
+            .count();
     }
 
     @Override
     public int getActiveChatsCount() {
-        // Return a random number between 5 and 50 for demo
-        return random.nextInt(46) + 5;
+        User recruiter = getCurrentRecruiter();
+        if (recruiter == null) return 0;
+        return chatRepository.findByParticipants_Id(recruiter.getId()).size();
     }
 
     @Override
     public int getDrivesConductedCount() {
-        // Return a random number between 10 and 100 for demo
-        return random.nextInt(91) + 10;
+        User recruiter = getCurrentRecruiter();
+        if (recruiter == null) return 0;
+        return jobRepository.findByRecruiterOrderByCreatedAtDesc(recruiter).size();
     }
 
     @Override
     public int getTotalEmployees() {
-        // Return a random number between 10 and 100 for demo
-        return random.nextInt(91) + 10;
+        User recruiter = getCurrentRecruiter();
+        if (recruiter == null) return 0;
+        return recruiterProfileRepository.findByUser(recruiter)
+            .map(rp -> {
+                String ne = rp.getNumEmployees();
+                if (ne == null || ne.isBlank()) return 0;
+                // Parse range like "1-10" → take lower bound
+                try { return Integer.parseInt(ne.split("-")[0].replace("+", "").trim()); }
+                catch (Exception e) { return 0; }
+            }).orElse(0);
     }
 
     @Override
     public List<Map<String, Object>> getCandidatesByMonth() {
-        List<Map<String, Object>> data = new ArrayList<>();
-        
-        // Get last 6 months
-        int currentMonth = java.time.LocalDate.now().getMonthValue();
-        
+        List<Map<String, Object>> result = new ArrayList<>();
+        String[] months = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+
+        List<User> candidates = userRepository.findAll().stream()
+            .filter(u -> u.getRole() == Role.CANDIDATE && u.getCreatedAt() != null)
+            .collect(Collectors.toList());
+
         for (int i = 5; i >= 0; i--) {
-            int monthIndex = (currentMonth - 1 - i + 12) % 12;
-            Map<String, Object> monthData = new HashMap<>();
-            monthData.put("month", months[monthIndex]);
-            monthData.put("count", random.nextInt(50) + 10); // Random count between 10-60
-            data.add(monthData);
+            LocalDate target = LocalDate.now().minusMonths(i);
+            int m = target.getMonthValue();
+            int y = target.getYear();
+            long count = candidates.stream().filter(u -> {
+                LocalDate d = u.getCreatedAt().toLocalDate();
+                return d.getMonthValue() == m && d.getYear() == y;
+            }).count();
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("month", months[m - 1]);
+            entry.put("count", count);
+            result.add(entry);
         }
-        
-        return data;
+        return result;
     }
 
     @Override
     public List<Map<String, Object>> getDrivesByMonth() {
-        List<Map<String, Object>> data = new ArrayList<>();
-        
-        // Get last 6 months
-        int currentMonth = java.time.LocalDate.now().getMonthValue();
-        
+        User recruiter = getCurrentRecruiter();
+        List<Map<String, Object>> result = new ArrayList<>();
+        String[] months = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+
+        List<JobPosting> jobs = recruiter != null
+            ? jobRepository.findByRecruiterOrderByCreatedAtDesc(recruiter)
+            : Collections.emptyList();
+
         for (int i = 5; i >= 0; i--) {
-            int monthIndex = (currentMonth - 1 - i + 12) % 12;
-            Map<String, Object> monthData = new HashMap<>();
-            monthData.put("month", months[monthIndex]);
-            monthData.put("count", random.nextInt(10) + 1); // Random count between 1-10
-            data.add(monthData);
+            LocalDate target = LocalDate.now().minusMonths(i);
+            int m = target.getMonthValue();
+            int y = target.getYear();
+            long count = jobs.stream().filter(j -> {
+                if (j.getCreatedAt() == null) return false;
+                LocalDate d = j.getCreatedAt().atZone(ZoneId.systemDefault()).toLocalDate();
+                return d.getMonthValue() == m && d.getYear() == y;
+            }).count();
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("month", months[m - 1]);
+            entry.put("count", count);
+            result.add(entry);
         }
-        
-        return data;
+        return result;
     }
 }

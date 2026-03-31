@@ -1,18 +1,21 @@
 import DashboardLayout from '../components/DashboardLayout';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { FiHome, FiFilePlus, FiUsers, FiMessageCircle, FiUser, FiEdit, FiBarChart2, FiCreditCard, FiClock } from 'react-icons/fi';
+import { FiHome, FiFilePlus, FiUsers, FiMessageCircle, FiUser, FiBarChart2, FiCreditCard, FiClock } from 'react-icons/fi';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 import Payment from './Payment';
 import PaymentConfirm from './PaymentConfirm';
 import GenerateTest from './GenerateTest';
-import Interview from './Interview';
 import Chat from './Chat';
 import CandidateProfiles from './CandidateProfiles';
 import EditProfile from './EditProfile';
 import Results from './Results';
-import JobHistory from './JobHistory';
 import DashboardHome from './DashboardHome';
+import Rounds from './Rounds';
+import Shortlist from './Shortlist';
+import MixedRoundCreation from './MixedRoundCreation';
+import MixedResults from './MixedResults';
 
 export default function RecruiterDashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
@@ -23,11 +26,14 @@ export default function RecruiterDashboard() {
     const fetchUnreadCount = async () => {
       try {
         const token = localStorage.getItem('token');
-        const res = await axios.get('/api/chat/chats', {
-          headers: { Authorization: `Bearer ${token}` }
+        const res = await axios.get(`${API_BASE_URL}/chat/unread-count`, {
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'x-skip-loader': 'true'  // Background polling should not trigger loading overlay
+          },
+          timeout: 10000
         });
-        const list = Array.isArray(res.data) ? res.data : [];
-        const total = list.reduce((sum, c) => sum + (Number(c.unreadCount) || 0), 0);
+        const total = Number(res.data?.totalUnreadCount) || 0;
         setUnreadCount(total);
       } catch (err) {
         console.error('Failed to fetch unread count:', err);
@@ -36,15 +42,26 @@ export default function RecruiterDashboard() {
       setLoading(false);
     };
 
+    const handleUnreadUpdate = (event) => {
+      const total = Number(event?.detail?.total);
+      if (!Number.isNaN(total)) {
+        setUnreadCount(total);
+        setLoading(false);
+      }
+    };
+
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchUnreadCount, 5000);
+    window.addEventListener('chat:unread-updated', handleUnreadUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('chat:unread-updated', handleUnreadUpdate);
+    };
   }, []);
 
   const recruiterMenu = [
     { label: 'Dashboard', path: '/recruiter/dashboard', icon: <FiHome /> },
     { label: 'Generate Test', path: '/recruiter/generate-test', icon: <FiFilePlus /> },
-    { label: 'Interview', path: '/recruiter/interview', icon: <FiUsers /> },
     { 
       label: (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
@@ -69,9 +86,6 @@ export default function RecruiterDashboard() {
       icon: <FiMessageCircle /> 
     },
     { label: 'Candidate Profiles', path: '/recruiter/candidate-profiles', icon: <FiUser /> },
-    { label: 'Edit Profile', path: '/recruiter/edit-profile', icon: <FiEdit /> },
-    { label: 'Job Posting', path: '/recruiter/job-history', icon: <FiClock /> },
-    { label: 'Results', path: '/recruiter/results', icon: <FiBarChart2 /> },
     { label: 'Support / Payment', path: '/recruiter/payment-confirm', icon: <FiCreditCard /> },
   ];
   return (
@@ -79,14 +93,17 @@ export default function RecruiterDashboard() {
       <Routes>
         <Route path="dashboard" element={<DashboardHome />} />
         <Route path="generate-test" element={<GenerateTest />} />
-        <Route path="interview" element={<Interview />} />
         <Route path="chat" element={<Chat />} />
         <Route path="candidate-profiles" element={<CandidateProfiles />} />
         <Route path="edit-profile" element={<EditProfile />} />
-        <Route path="job-history" element={<JobHistory />} />
-        <Route path="results" element={<Results />} />
         <Route path="payment-confirm" element={<PaymentConfirm />} />
         <Route path="payment" element={<Payment />} />
+        <Route path="rounds/:jobId" element={<Rounds />} />
+        <Route path="jobs/:jobId/shortlist" element={<Shortlist />} />
+        
+        {/* Mixed Round Management */}
+        <Route path="mixed-round/:roundId/configure" element={<MixedRoundCreation />} />
+        <Route path="mixed-round/:roundId/results" element={<MixedResults />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>
     </DashboardLayout>

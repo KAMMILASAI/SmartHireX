@@ -1,6 +1,32 @@
+/* MCQs Practice Mode Styles */
+
+/* Container and layout fixes */
+.simple-mcq-container {
+  max-width: 100% !important;
+  overflow-x: hidden;
+}
+
+.simple-mcq-card {
+  max-width: 100% !important;
+  overflow-x: hidden;
+}
+
+.simple-mcq-body {
+  max-width: 100% !important;
+  overflow-x: hidden;
+}
+
+.simple-mcq-main {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow-x: hidden;
+}
+
 /* Sidebar modern styling */
 .simple-mcq-sidebar {
   backdrop-filter: blur(6px);
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .sidebar-header {
@@ -68,6 +94,48 @@
 .legend .dot.current { background: #3b82f6; }
 .legend .dot.answered { background: #10b981; }
 .legend .dot.left { border: 1px solid #374151; }
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .simple-mcq-sidebar {
+    width: 280px !important;
+    position: fixed !important;
+    right: 0 !important;
+    top: 0 !important;
+    height: 100vh !important;
+    z-index: 1000 !important;
+    transform: translateX(100%) !important;
+    transition: transform 0.3s ease !important;
+  }
+  
+  .simple-mcq-sidebar.show {
+    transform: translateX(0) !important;
+  }
+  
+  .simple-mcq-main {
+    width: 100% !important;
+  }
+  
+  .simple-mcq-container {
+    height: calc(100vh - 60px) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .simple-mcq-sidebar {
+    width: 100vw !important;
+  }
+  
+  .simple-mcq-header {
+    padding: 12px 16px !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  
+  .simple-mcq-question {
+    padding: 16px !important;
+  }
+}
 
 /* Custom scrollbar for sidebar */
 .simple-mcq-sidebar::-webkit-scrollbar { width: 10px; }

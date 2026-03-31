@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
+import { useToast } from '../contexts/ToastContext';
+import ConfirmModal from '../components/ConfirmModal';
 import './AdminDashboardHome.css';
 
 export default function Requests() {
@@ -7,6 +10,19 @@ export default function Requests() {
   const [loading, setLoading] = useState(true);
   const [processingRequest, setProcessingRequest] = useState(null);
   const [error, setError] = useState(null);
+  const { showSuccess, showError } = useToast();
+
+  // Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'info',
+    confirmText: 'Confirm'
+  });
+
+  const closeConfirmModal = () => setConfirmModal(prev => ({ ...prev, isOpen: false }));
 
   useEffect(() => {
     fetchPendingRecruiters();
@@ -17,58 +33,70 @@ export default function Requests() {
     setError(null);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get('http://localhost:8080/api/admin/pending-recruiters', {
+      const res = await axios.get(`${API_BASE_URL}/admin/pending-recruiters`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPendingRecruiters(res.data.requests || []);
     } catch (err) {
       setError('Failed to load pending requests');
-      console.error('Failed to load pending recruiters:', err);
+      showError('Failed to load pending recruiters.');
     }
     setLoading(false);
   };
 
   const handleApproveRecruiter = async (userId) => {
-    const adminMessage = prompt('Enter an optional message for the recruiter (optional):');
-    setProcessingRequest(userId);
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:8080/api/admin/approve-recruiter/${userId}`, 
-        { adminMessage }, 
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      // Remove from pending list
-      setPendingRecruiters(prev => prev.filter(r => r._id !== userId));
-      alert('Recruiter approved successfully! They will receive an email notification.');
-    } catch (err) {
-      alert('Failed to approve recruiter: ' + (err.response?.data?.message || err.message));
-    }
-    setProcessingRequest(null);
+    // For now using simple confirmation, can be enhanced with a text input modal
+    setConfirmModal({
+      isOpen: true,
+      title: 'Approve Recruiter',
+      message: 'Are you sure you want to approve this recruiter? They will be granted access to post jobs and manage candidates.',
+      confirmText: 'Approve',
+      type: 'info',
+      onConfirm: async () => {
+        closeConfirmModal();
+        setProcessingRequest(userId);
+        try {
+          const token = localStorage.getItem('token');
+          await axios.post(`${API_BASE_URL}/admin/approve-recruiter/${userId}`, 
+            { adminMessage: 'Welcome to SmartHireX!' }, 
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          setPendingRecruiters(prev => prev.filter(r => r._id !== userId));
+          showSuccess('Recruiter approved successfully! They will receive an email notification.');
+        } catch (err) {
+          showError('Failed to approve recruiter: ' + (err.response?.data?.message || err.message));
+        }
+        setProcessingRequest(null);
+      }
+    });
   };
 
   const handleRejectRecruiter = async (userId) => {
-    const adminMessage = prompt('Enter a reason for rejection (required):');
-    if (!adminMessage) {
-      alert('Please provide a reason for rejection.');
-      return;
-    }
-    
-    setProcessingRequest(userId);
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`http://localhost:8080/api/admin/reject-recruiter/${userId}`, 
-        { adminMessage }, 
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      // Remove from pending list
-      setPendingRecruiters(prev => prev.filter(r => r._id !== userId));
-      alert('Recruiter rejected. They will receive an email notification.');
-    } catch (err) {
-      alert('Failed to reject recruiter: ' + (err.response?.data?.message || err.message));
-    }
-    setProcessingRequest(null);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reject Recruiter',
+      message: 'Are you sure you want to reject this recruiter request? Please provide a reason if possible.',
+      confirmText: 'Reject',
+      type: 'danger',
+      onConfirm: async () => {
+        closeConfirmModal();
+        setProcessingRequest(userId);
+        try {
+          const token = localStorage.getItem('token');
+          await axios.post(`${API_BASE_URL}/admin/reject-recruiter/${userId}`, 
+            { adminMessage: 'Request does not meet our criteria.' }, 
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          setPendingRecruiters(prev => prev.filter(r => r._id !== userId));
+          showSuccess('Recruiter rejected. They will receive an email notification.');
+        } catch (err) {
+          showError('Failed to reject recruiter: ' + (err.response?.data?.message || err.message));
+        }
+        setProcessingRequest(null);
+      }
+    });
   };
 
   return (
@@ -166,6 +194,17 @@ export default function Requests() {
           </div>
         )}
       </div>
+
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmModal}
+        type={confirmModal.type}
+        confirmText={confirmModal.confirmText}
+      />
     </div>
   );
 }
+

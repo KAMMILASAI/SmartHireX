@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import './Applications.css';
+import { API_BASE_URL } from '../config';
 import { 
   FaClock, 
   FaTimesCircle, 
@@ -10,7 +11,8 @@ import {
   FaBuilding, 
   FaMapMarkerAlt, 
   FaCalendarAlt,
-  FaStar
+  FaStar,
+  FaTrophy
 } from 'react-icons/fa';
 
 const Applications = () => {
@@ -18,7 +20,29 @@ const Applications = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+
+  // Format date function to handle both Unix timestamps and ISO strings
+  const formatDate = (dateValue) => {
+    if (!dateValue) return 'Not set';
+    
+    let date;
+    if (typeof dateValue === 'number') {
+      // Handle Unix timestamp (multiply by 1000 to convert to milliseconds)
+      date = new Date(dateValue * 1000);
+    } else if (typeof dateValue === 'string') {
+      // Handle ISO string
+      date = new Date(dateValue);
+    } else {
+      return 'Invalid Date';
+    }
+    
+    // Check if the date is valid before formatting
+    if (isNaN(date.getTime())) {
+      return 'Invalid Date';
+    }
+    
+    return date.toLocaleDateString('en-GB'); // Use a specific locale for dd/mm/yyyy format
+  };
   
   // Status filters with icons and labels
   const statusFilters = [
@@ -26,6 +50,7 @@ const Applications = () => {
     { id: 'applied', label: 'Applied', icon: <FaFileAlt className="icon-left" /> },
     { id: 'shortlisted', label: 'Shortlisted', icon: <FaStar className="icon-left" /> },
     { id: 'interview', label: 'Interview', icon: <FaCalendarAlt className="icon-left" /> },
+    { id: 'selected', label: 'Selected', icon: <FaTrophy className="icon-left" /> },
     { id: 'rejected', label: 'Rejected', icon: <FaTimesCircle className="icon-left" /> },
   ];
 
@@ -34,8 +59,28 @@ const Applications = () => {
       try {
         const token = localStorage.getItem('token') || localStorage.getItem('accessToken');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await axios.get(`${API_BASE}/candidate/applications`, { headers });
+        const res = await axios.get(`${API_BASE_URL}/candidate/applications`, { headers });
         const list = Array.isArray(res.data) ? res.data : [];
+        
+        // Debug logging to check application statuses
+        console.log('📋 Loaded applications:', list.length);
+        const statusCounts = list.reduce((acc, app) => {
+          acc[app.status] = (acc[app.status] || 0) + 1;
+          return acc;
+        }, {});
+        console.log('📊 Application status breakdown:', statusCounts);
+        
+        // Log rejected applications specifically
+        const rejectedApps = list.filter(app => app.status === 'rejected');
+        if (rejectedApps.length > 0) {
+          console.log('🚫 Rejected applications:', rejectedApps.map(app => ({
+            id: app._id,
+            job: app.job?.title,
+            company: app.job?.company,
+            appliedAt: app.appliedAt
+          })));
+        }
+        
         setApplications(list);
       } catch (e) {
         setApplications([]);
@@ -48,15 +93,19 @@ const Applications = () => {
 
   // Filter applications based on search and active filter
   const filteredApplications = applications.filter(app => {
+    const jobTitle = String(app?.job?.title || '');
+    const companyName = String(app?.job?.company || '');
     const matchesSearch = 
-      app.job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.job.company.toLowerCase().includes(searchTerm.toLowerCase());
+      jobTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      companyName.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (activeFilter === 'all') return matchesSearch;
     if (activeFilter === 'shortlisted') 
       return matchesSearch && (app.status === 'shortlisted' || app.status === 'under_review');
     if (activeFilter === 'interview') 
       return matchesSearch && (app.status === 'interview_scheduled' || app.status === 'interview_completed');
+    if (activeFilter === 'selected')
+      return matchesSearch && (app.status === 'selected' || app.status === 'hired' || app.status === 'offer_accepted');
     
     return matchesSearch && app.status === activeFilter;
   });
@@ -67,6 +116,10 @@ const Applications = () => {
       applied: { cls: 'badge badge-blue', icon: <FaClock className="icon-left" />, label: 'Applied' },
       shortlisted: { cls: 'badge badge-purple', icon: <FaStar className="icon-left" />, label: 'Shortlisted' },
       interview_scheduled: { cls: 'badge badge-blue', icon: <FaCalendarAlt className="icon-left" />, label: 'Interview' },
+      interview_completed: { cls: 'badge badge-blue', icon: <FaCalendarAlt className="icon-left" />, label: 'Interview Completed' },
+      selected: { cls: 'badge badge-green', icon: <FaTrophy className="icon-left" />, label: 'Selected' },
+      hired: { cls: 'badge badge-green', icon: <FaTrophy className="icon-left" />, label: 'Hired' },
+      offer_accepted: { cls: 'badge badge-green', icon: <FaTrophy className="icon-left" />, label: 'Offer Accepted' },
       rejected: { cls: 'badge badge-red', icon: <FaTimesCircle className="icon-left" />, label: 'Rejected' },
       default: { cls: 'badge', icon: null, label: status }
     };
@@ -111,16 +164,31 @@ const Applications = () => {
       </div>
 
       <div className="filters-row">
-          {statusFilters.map(filter => (
-            <button
-              key={filter.id}
-              onClick={() => setActiveFilter(filter.id)}
-              className={`filter-btn ${activeFilter === filter.id ? 'active' : ''}`}
-            >
-              {filter.icon}
-              {filter.label}
-            </button>
-          ))}
+          {statusFilters.map(filter => {
+            const count = filter.id === 'all' 
+              ? applications.length 
+              : applications.filter(app => {
+                  if (filter.id === 'shortlisted') 
+                    return app.status === 'shortlisted' || app.status === 'under_review';
+                  if (filter.id === 'interview') 
+                    return app.status === 'interview_scheduled' || app.status === 'interview_completed';
+                  if (filter.id === 'selected')
+                    return app.status === 'selected' || app.status === 'hired' || app.status === 'offer_accepted';
+                  return app.status === filter.id;
+                }).length;
+            
+            return (
+              <button
+                key={filter.id}
+                onClick={() => setActiveFilter(filter.id)}
+                className={`filter-btn ${activeFilter === filter.id ? 'active' : ''} ${filter.id === 'rejected' && count > 0 ? 'has-rejected' : ''}`}
+              >
+                {filter.icon}
+                {filter.label}
+                {count > 0 && <span className="filter-count">{count}</span>}
+              </button>
+            );
+          })}
       </div>
 
       <div className="apps-grid">
@@ -142,12 +210,12 @@ const Applications = () => {
             <div key={application._id} className="app-card">
               <div className="card-head">
                 <div className="head-left">
-                  <div className="company-logo">{application.job.company.charAt(0).toUpperCase()}</div>
+                  <div className="company-logo">{String(application?.job?.company || '?').charAt(0).toUpperCase()}</div>
                   <div className="job-meta">
-                    <h3 className="job-title">{application.job.title}</h3>
+                    <h3 className="job-title">{application?.job?.title || 'Untitled Job'}</h3>
                     <p className="company-line">
                       <FaBuilding className="icon-left" />
-                      {application.job.company}
+                      {application?.job?.company || 'Unknown Company'}
                     </p>
                   </div>
                 </div>
@@ -158,14 +226,14 @@ const Applications = () => {
               <div className="meta-list">
                 <div className="meta-item">
                   <FaMapMarkerAlt className="icon-left" />
-                  <span>{application.job.location || 'Remote'}</span>
+                  <span>{application?.job?.location || 'Remote'}</span>
                 </div>
                 <div className="meta-item">
                   <FaCalendarAlt className="icon-left" />
-                  <span>Applied {new Date(application.appliedAt).toLocaleDateString()}</span>
+                  <span>Applied {formatDate(application.appliedAt)}</span>
                 </div>
                 {application.updatedAt && application.status !== 'applied' && (
-                  <div className="meta-updated">Updated: {new Date(application.updatedAt).toLocaleDateString()}</div>
+                  <div className="meta-updated">Updated: {formatDate(application.updatedAt)}</div>
                 )}
               </div>
 
@@ -187,7 +255,7 @@ const Applications = () => {
                   <p className="panel-title">{application.status === 'interview_completed' ? 'Interview Completed' : 'Upcoming Interview'}</p>
                   <div className="panel-row">
                     <FaCalendarAlt className="icon-left purple" />
-                    <span>{new Date(application.interviewScheduled).toLocaleString()}</span>
+                    <span>{formatDate(application.interviewScheduled)}</span>
                   </div>
                   {application.interviewLink && (
                     <a href={application.interviewLink} target="_blank" rel="noopener noreferrer" className="pill-btn purple">{application.status === 'interview_completed' ? 'View Recording' : 'Join Meeting'}</a>
@@ -199,6 +267,50 @@ const Applications = () => {
                 <div className="panel panel-yellow">
                   <p className="panel-title">Note from Recruiter</p>
                   <p className="panel-text">{application.notes}</p>
+                </div>
+              )}
+              
+              {(application.status === 'selected' || application.status === 'hired' || application.status === 'offer_accepted') && (
+                <div className="panel panel-green">
+                  <p className="panel-title">🎉 Congratulations! You've been Selected</p>
+                  <div className="panel-row">
+                    <FaTrophy className="icon-left green" />
+                    <span>
+                      {application.status === 'hired' ? 
+                        'You have been hired for this position! Welcome to the team.' :
+                        application.status === 'offer_accepted' ?
+                        'Your job offer has been accepted. HR will contact you with next steps.' :
+                        'You have been selected for this position. Congratulations on your success!'}
+                    </span>
+                  </div>
+                  {application.selectedAt && (
+                    <div className="panel-row">
+                      <FaCalendarAlt className="icon-left green" />
+                      <span>Selected on: {formatDate(application.selectedAt)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {application.status === 'rejected' && (
+                <div className="panel panel-red">
+                  <p className="panel-title">Application Rejected</p>
+                  <div className="panel-row">
+                    <FaTimesCircle className="icon-left red" />
+                    <span>
+                      {application.rejectionReason || 
+                       application.notes?.includes('not attempted') || 
+                       application.notes?.includes('auto-rejected') ? 
+                        'Application rejected due to not attempting required assessment rounds.' :
+                        'Application was not selected to proceed to the next stage.'}
+                    </span>
+                  </div>
+                  {application.rejectedAt && (
+                    <div className="panel-row">
+                      <FaCalendarAlt className="icon-left red" />
+                      <span>Rejected on: {formatDate(application.rejectedAt)}</span>
+                    </div>
+                  )}
                 </div>
               )}
 

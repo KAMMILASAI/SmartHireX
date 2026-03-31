@@ -1,13 +1,15 @@
 package com.SmartHireX.service.impl;
 
-import com.SmartHireX.dto.request.ProfileUpdateRequest;
-import com.SmartHireX.dto.request.RegisterRequest;
-import com.SmartHireX.entity.User;
-import com.SmartHireX.repository.UserRepository;
-import com.SmartHireX.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import com.SmartHireX.dto.request.ProfileUpdateRequest;
+import com.SmartHireX.dto.request.RegisterRequest;
+import com.SmartHireX.entity.Role;
+import com.SmartHireX.entity.User;
+import com.SmartHireX.repository.UserRepository;
+import com.SmartHireX.service.UserService;
 
 import java.util.Optional;
 
@@ -45,7 +47,15 @@ public class UserServiceImpl implements UserService {
             rawPassword = sb.toString();
         }
         user.setPassword(passwordEncoder.encode(rawPassword));
-        user.setRole(registerRequest.getRole());
+        // Convert String role to Role enum
+        String roleStr = registerRequest.getRole();
+        Role role = Role.CANDIDATE; // default
+        if ("admin".equalsIgnoreCase(roleStr)) {
+            role = Role.ADMIN;
+        } else if ("recruiter".equalsIgnoreCase(roleStr)) {
+            role = Role.RECRUITER;
+        }
+        user.setRole(role);
         user.setVerified(registerRequest.isVerified());
         
         return userRepository.save(user);
@@ -105,6 +115,10 @@ public class UserServiceImpl implements UserService {
 
         if (updateRequest.getPhone() != null) {
             user.setPhone(updateRequest.getPhone());
+        }
+
+        if (updateRequest.getWebsite() != null) {
+            user.setWebsite(updateRequest.getWebsite());
         }
 
         return userRepository.save(user);

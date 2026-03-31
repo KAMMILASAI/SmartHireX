@@ -18,7 +18,7 @@ import java.util.List;
 @EnableWebMvc
 public class WebMvcConfig implements WebMvcConfigurer {
 
-    @Value("${app.frontend.url:https://smarthirex.netlify.app}")
+    @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
     @Bean
@@ -28,7 +28,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
         
         // Configure CORS
         config.setAllowCredentials(true);
-        config.setAllowedOrigins(List.of(frontendUrl));
+        // Allow both main frontend and video call frontend
+        config.setAllowedOrigins(List.of(
+            frontendUrl,
+            "https://smarthirexvideocall.netlify.app"
+        ));
         config.setAllowedHeaders(Arrays.asList("Origin", "Content-Type", "Accept", "Authorization"));
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setExposedHeaders(List.of("Authorization"));
@@ -39,7 +43,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // Register specific CORS configuration for OAuth2 endpoints
         CorsConfiguration oauth2Config = new CorsConfiguration();
         oauth2Config.setAllowCredentials(true);
-        oauth2Config.setAllowedOrigins(List.of(frontendUrl));
+        oauth2Config.setAllowedOrigins(List.of(
+            frontendUrl,
+            "https://smarthirexvideocall.netlify.app"
+        ));
         oauth2Config.setAllowedMethods(Arrays.asList("GET", "POST"));
         oauth2Config.setAllowedHeaders(Arrays.asList("Content-Type", "Authorization"));
         oauth2Config.setExposedHeaders(List.of("Authorization"));

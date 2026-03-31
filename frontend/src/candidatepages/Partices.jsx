@@ -1,24 +1,115 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { FiClock, FiTrendingUp, FiAward, FiBook, FiCode, FiMic, FiArchive, FiX, FiCheck, FiAlertCircle, FiUpload } from 'react-icons/fi';
+import { FiClock, FiTrendingUp, FiAward, FiBook, FiCode, FiMic, FiArchive, FiX, FiCheck, FiAlertCircle, FiUpload, FiRefreshCw } from 'react-icons/fi';
+import { API_BASE_URL } from '../config';
 import './Partices.css';
 
 const DIFFICULTY = ["Low", "Medium", "High"];
-const POPULAR_TECHS = [
-  // Web/Programming
-  'JavaScript', 'React', 'Node.js', 'Python', 'Java', 'C', 'C++', 'Go', 'TypeScript',
-  'HTML', 'CSS', 'Angular', 'Vue.js', 'Next.js', 'Express.js', 'MongoDB', 'SQL', 'PostgreSQL',
-  'Git', 'Docker', 'Kubernetes', 'AWS', 'Azure', 'GCP', 'REST API', 'GraphQL', 'Redux',
+const DSA_TOPICS = [
+  // Basic Data Structures
+  'Arrays', 'Strings', 'Linked Lists', 'Stacks', 'Queues', 'Hash Tables', 'Sets', 'Maps', 'Priority Queues',
   
-  // Core CS subjects
-  'Data Structures', 'Algorithms', 'Operating Systems', 'DBMS', 'Computer Networks', 'OOP', 'Software Engineering', 'System Design', 'Discrete Mathematics',
+  // Advanced Data Structures  
+  'Trees', 'Binary Trees', 'Binary Search Trees', 'AVL Trees', 'Red-Black Trees', 'B-Trees', 'B+ Trees',
+  'Heaps', 'Tries', 'Segment Trees', 'Fenwick Trees (BIT)', 'Disjoint Set Union (DSU)', 'Sparse Table',
+  'Square Root Decomposition', 'Suffix Array', 'Suffix Tree', 'Heavy Light Decomposition (HLD)',
+  'Centroid Decomposition', 'Treap', 'Splay Tree', 'Interval Tree', 'Segment Tree Beats',
+  
+  // Graph Structures
+  'Graphs', 'Directed Graphs', 'Undirected Graphs', 'Weighted Graphs', 'Adjacency Matrix', 'Adjacency List',
+  'Bipartite Graphs', 'Planar Graphs', 'Tournament Graphs', 'DAG (Directed Acyclic Graph)',
+  
+  // Sorting Algorithms
+  'Bubble Sort', 'Selection Sort', 'Insertion Sort', 'Merge Sort', 'Quick Sort', 'Heap Sort', 
+  'Counting Sort', 'Radix Sort', 'Bucket Sort', 'Tim Sort', 'Shell Sort', 'Cycle Sort', 'Pancake Sorting',
+  
+  // Searching Algorithms
+  'Linear Search', 'Binary Search', 'Ternary Search', 'Exponential Search', 'Interpolation Search',
+  'Jump Search', 'Fibonacci Search',
+  
+  // Graph Algorithms
+  'BFS', 'DFS', 'Dijkstra Algorithm', 'Bellman-Ford', 'Floyd-Warshall', 'Kruskal Algorithm',
+  'Prim Algorithm', 'Topological Sort', 'Strongly Connected Components (SCC)', 'Articulation Points',
+  'Bridges in Graph', 'Tarjan Algorithm', 'Kosaraju Algorithm', 'Eulerian Path/Circuit',
+  'Hamiltonian Path/Circuit', 'Maximum Flow (Ford-Fulkerson, Dinic)', 'Bipartite Matching (Hopcroft-Karp)',
+  'Min-Cost Max-Flow', 'Lowest Common Ancestor (LCA)',
+  
+  // Dynamic Programming
+  'Dynamic Programming', 'Memoization', 'Tabulation', 'Knapsack Problem', 'LCS', 'LIS',
+  'Edit Distance', 'Coin Change', 'Matrix Chain Multiplication', 'Palindrome Partitioning',
+  'DP on Trees', 'Bitmask DP', 'Digit DP', 'Convex Hull Trick', 'Divide and Conquer Optimization',
+  'SOS DP (Sum over Subsets)', 'Knuth Optimization',
+  
+  // Greedy Algorithms
+  'Greedy Algorithms', 'Activity Selection', 'Fractional Knapsack', 'Job Scheduling',
+  'Huffman Coding', 'Minimum Spanning Tree (MST)', 'K-centers Problem', 'Huffman Coding',
+  
+  // Advanced Algorithms
+  'Backtracking', 'Branch and Bound', 'Divide and Conquer', 'Two Pointers', 'Sliding Window',
+  'Recursion', 'Bit Manipulation', 'Mathematical Algorithms', 'Number Theory', 'Combinatorics',
+  'Fast Fourier Transform (FFT)', 'Number Theoretic Transform (NTT)', 'Mo Algorithm',
+  'Geometric Algorithms (Convex Hull, Line Sweep)', 'String Matching (KMP, Z-Algorithm, Rabin-Karp)',
+  'Aho-Corasick Algorithm', 'Manacher Algorithm'
+];
 
-  // Core Engineering subjects
-  'Digital Electronics', 'Analog Electronics', 'Electrical Circuits', 'Electrical Machines',
-  'Signals and Systems', 'Control Systems', 'Power Systems',
-  'Thermodynamics', 'Strength of Materials', 'Manufacturing', 'Fluid Mechanics', 'Heat Transfer', 'Machine Design',
-  'Civil Structures', 'Geotechnical Engineering', 'Surveying', 'Transportation Engineering', 'Environmental Engineering'
+const MCQ_TOPICS = [
+  // Programming Languages
+  'JavaScript', 'Python', 'Java', 'C++', 'C', 'C#', 'Go', 'TypeScript', 'Rust', 'Kotlin', 'Swift', 'PHP', 'Ruby',
+  'Scala', 'Dart', 'Elixir', 'Haskell', 'Lua', 'Perl', 'R', 'SQL', 'NoSQL', 'Solidity', 'Zig',
+  
+  // Web Technologies
+  'React', 'Node.js', 'HTML', 'CSS', 'Angular', 'Vue.js', 'Next.js', 'Express.js', 'FastAPI', 'Spring Boot',
+  '.NET Core', 'Laravel', 'Django', 'Flask', 'Ruby on Rails', 'Svelte', 'SolidJS', 'Remix', 'Astro',
+  'REST API', 'GraphQL', 'gRPC', 'WebSockets', 'WebRTC', 'Redux', 'Zustand', 'TanStack Query',
+  'Tailwind CSS', 'Material UI', 'Bootstrap', 'Chakra UI', 'Shadcn UI',
+  
+  // Databases & Storage
+  'MongoDB', 'PostgreSQL', 'MySQL', 'Redis', 'Cassandra', 'DynamoDB', 'SQLite', 'MariaDB', 'Oracle',
+  'Elasticsearch', 'InfluxDB', 'Neo4j', 'ClickHouse', 'Firebase', 'Supabase', 'Appwrite',
+  
+  // Core Computer Science Subjects
+  'Operating Systems', 'DBMS', 'Computer Networks', 'OOP', 'Software Engineering', 'Discrete Mathematics',
+  'Computer Architecture', 'Compiler Design', 'Theory of Computation', 'Cryptography', 'Cyber Security',
+  'Machine Learning', 'AI', 'Deep Learning', 'NLP', 'Computer Vision', 'Data Science', 'Big Data',
+  
+  // System Design & Architecture
+  'System Design', 'Microservices', 'Serverless', 'Load Balancing', 'Caching', 'Database Sharding',
+  'Replication', 'Scalability', 'Distributed Systems', 'Message Queues (RabbitMQ, Kafka)', 'API Design',
+  'Event-Driven Architecture', 'Cloud Computing', 'Edge Computing',
+  
+  // DevOps & Tools
+  'Git', 'GitHub Actions', 'GitLab CI', 'Docker', 'Kubernetes', 'AWS', 'Azure', 'GCP', 'Jenkins', 'Terraform',
+  'Ansible', 'Prometheus', 'Grafana', 'ELK Stack', 'Splunk', 'Linux', 'Shell Scripting', 'Nginx', 'Apache',
+  
+  // Testing
+  'Unit Testing', 'Integration Testing', 'E2E Testing', 'Jest', 'Cypress', 'Playwright', 'Selenium',
+  'Vitest', 'Testing Library', 'TDD (Test Driven Development)', 'BDD (Behavior Driven Development)',
+  
+  // Aptitude & Reasoning Topics
+  'Quantitative Aptitude', 'Logical Reasoning', 'Verbal Reasoning', 'Analytical Reasoning',
+  'Data Interpretation', 'Number Systems', 'Percentages', 'Profit and Loss', 'Time and Work',
+  'Speed and Distance', 'Permutation and Combination', 'Probability', 'Statistics',
+  'Blood Relations', 'Coding-Decoding', 'Series Completion', 'Pattern Recognition',
+  'Syllogisms', 'Analogies', 'Classification', 'Direction Sense', 'Ranking and Order',
+  
+  // Verbal & English Topics
+  'English Grammar', 'Vocabulary', 'Reading Comprehension', 'Sentence Correction',
+  'Para Jumbles', 'Fill in the Blanks', 'Synonyms and Antonyms', 'Idioms and Phrases',
+  'Active and Passive Voice', 'Direct and Indirect Speech', 'Tenses', 'Articles',
+  
+  // General Knowledge
+  'Current Affairs', 'General Knowledge', 'History', 'Geography', 'Science', 'Sports',
+  'Politics', 'Economics', 'Technology News', 'Business Awareness'
+];
+
+// Popular technologies for autocomplete suggestions
+const POPULAR_TECHS = [
+  'JavaScript', 'Python', 'Java', 'React', 'Node.js', 'TypeScript', 'HTML', 'CSS',
+  'Angular', 'Vue.js', 'C++', 'C#', 'PHP', 'Ruby', 'Go', 'Rust', 'Swift', 'Kotlin',
+  'MongoDB', 'MySQL', 'PostgreSQL', 'Redis', 'Express.js', 'Django', 'Flask', 'Spring Boot',
+  'Next.js', 'Tailwind CSS', 'AWS', 'Azure', 'GCP', 'Git', 'Docker', 'Kubernetes', 
+  'Machine Learning', 'AI', 'System Design', 'Data Structures', 'Algorithms'
 ];
 
 // Safe date-time formatting for backend timestamps (supports 'created_at')
@@ -75,6 +166,220 @@ function formatDateTime(input) {
   }
 }
 
+// Multi-value Autocomplete Input Component
+function AutocompleteInput({ value, onChange, placeholder, suggestions = MCQ_TOPICS }) {
+  const [inputValue, setInputValue] = useState(value || '');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [filteredSuggestions, setFilteredSuggestions] = useState([]);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+
+  useEffect(() => {
+    setInputValue(value || '');
+  }, [value]);
+
+  // Get current typing word (after last comma)
+  const getCurrentWord = (text) => {
+    const parts = text.split(',');
+    return parts[parts.length - 1].trim();
+  };
+
+  // Get text before current word
+  const getTextBeforeCurrentWord = (text) => {
+    const parts = text.split(',');
+    if (parts.length <= 1) return '';
+    return parts.slice(0, -1).join(', ') + ', ';
+  };
+
+  useEffect(() => {
+    const currentWord = getCurrentWord(inputValue);
+    if (currentWord.length > 0) {
+      // Filter suggestions based on current word and exclude already added items
+      const existingItems = inputValue.split(',').map(item => item.trim()).filter(item => item);
+      const filtered = suggestions.filter(tech => 
+        tech.toLowerCase().includes(currentWord.toLowerCase()) &&
+        !existingItems.includes(tech)
+      ).slice(0, 10);
+      setFilteredSuggestions(filtered);
+      setShowSuggestions(filtered.length > 0);
+      setSelectedIndex(-1);
+    } else {
+      setShowSuggestions(false);
+      setSelectedIndex(-1);
+    }
+  }, [inputValue, suggestions]);
+
+  const handleInputChange = (e) => {
+    const newValue = e.target.value;
+    setInputValue(newValue);
+    onChange(newValue);
+  };
+
+  const handleSuggestionClick = (suggestion) => {
+    const beforeText = getTextBeforeCurrentWord(inputValue);
+    const newValue = beforeText + suggestion;
+    setInputValue(newValue);
+    onChange(newValue);
+    setShowSuggestions(false);
+    setSelectedIndex(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => 
+        prev < filteredSuggestions.length - 1 ? prev + 1 : prev
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => prev > 0 ? prev - 1 : -1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && filteredSuggestions[selectedIndex]) {
+        handleSuggestionClick(filteredSuggestions[selectedIndex]);
+      } else {
+        setShowSuggestions(false);
+      }
+    } else if (e.key === 'Tab') {
+      if (selectedIndex >= 0 && filteredSuggestions[selectedIndex]) {
+        e.preventDefault();
+        handleSuggestionClick(filteredSuggestions[selectedIndex]);
+      }
+    } else if (e.key === ',') {
+      // Auto-complete current word if there's a suggestion
+      if (selectedIndex >= 0 && filteredSuggestions[selectedIndex]) {
+        e.preventDefault();
+        const beforeText = getTextBeforeCurrentWord(inputValue);
+        const newValue = beforeText + filteredSuggestions[selectedIndex] + ', ';
+        setInputValue(newValue);
+        onChange(newValue);
+        setShowSuggestions(false);
+        setSelectedIndex(-1);
+      }
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
+      setSelectedIndex(-1);
+    }
+  };
+
+  // Parse tags from input value
+  const tags = inputValue.split(',').map(tag => tag.trim()).filter(tag => tag);
+  const currentWord = getCurrentWord(inputValue);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {/* Tags Display */}
+      {tags.length > 0 && (
+        <div style={{ 
+          marginBottom: '8px', 
+          display: 'flex', 
+          flexWrap: 'wrap', 
+          gap: '6px' 
+        }}>
+          {tags.map((tag, index) => (
+            <span
+              key={index}
+              style={{
+                background: '#374151',
+                color: '#e5e7eb',
+                padding: '4px 8px',
+                borderRadius: '12px',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px'
+              }}
+            >
+              {tag}
+              <button
+                onClick={() => {
+                  const newTags = tags.filter((_, i) => i !== index);
+                  const newValue = newTags.join(', ');
+                  setInputValue(newValue);
+                  onChange(newValue);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#9ca3af',
+                  cursor: 'pointer',
+                  padding: '0',
+                  fontSize: '14px',
+                  lineHeight: '1'
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      
+      <input
+        className="form-input"
+        type="text"
+        value={inputValue}
+        onChange={handleInputChange}
+        onKeyDown={handleKeyDown}
+        onFocus={() => getCurrentWord(inputValue).length > 0 && setShowSuggestions(filteredSuggestions.length > 0)}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+        placeholder={tags.length > 0 ? "Add another..." : placeholder}
+        style={{
+          width: '100%',
+          padding: '12px',
+          border: '1px solid #374151',
+          borderRadius: '8px',
+          background: '#111827',
+          color: '#e5e7eb',
+          fontSize: '14px'
+        }}
+      />
+      
+      {showSuggestions && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          background: '#1f2937',
+          border: '1px solid #374151',
+          borderRadius: '8px',
+          maxHeight: '200px',
+          overflowY: 'auto',
+          zIndex: 1000,
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
+        }}>
+          {filteredSuggestions.map((suggestion, index) => (
+            <div
+              key={index}
+              onClick={() => handleSuggestionClick(suggestion)}
+              style={{
+                padding: '8px 12px',
+                cursor: 'pointer',
+                borderBottom: index < filteredSuggestions.length - 1 ? '1px solid #374151' : 'none',
+                color: '#e5e7eb',
+                fontSize: '14px',
+                transition: 'background-color 0.2s',
+                backgroundColor: selectedIndex === index ? '#374151' : 'transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = '#374151';
+                setSelectedIndex(index);
+              }}
+              onMouseLeave={(e) => {
+                if (selectedIndex !== index) {
+                  e.target.style.backgroundColor = 'transparent';
+                }
+              }}
+            >
+              {suggestion}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Partices() {
   const navigate = useNavigate();
   const [mode, setMode] = useState(null);
@@ -83,6 +388,7 @@ export default function Partices() {
   const [historyStats, setHistoryStats] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  
   const [startTime, setStartTime] = useState(null);
   
   // MCQ States
@@ -90,16 +396,13 @@ export default function Partices() {
   const [mcqInput, setMcqInput] = useState({ tech: '', num: 5, difficulty: 'Medium' });
   const [mcqLoading, setMcqLoading] = useState(false);
   const [mcqs, setMcqs] = useState([]);
-  const [mcqStarted, setMcqStarted] = useState(false);
-  const [mcqAnswers, setMcqAnswers] = useState([]);
-  const [mcqScore, setMcqScore] = useState(null);
   // MCQ Timer
   const [mcqTimerEnabled, setMcqTimerEnabled] = useState(false);
   const [mcqTimerMinutes, setMcqTimerMinutes] = useState(10);
   
   // Coding States
   const [codingDialog, setCodingDialog] = useState(false);
-  const [codingInput, setCodingInput] = useState({ tech: '', difficulty: 'Medium', num: 1 });
+  const [codingInput, setCodingInput] = useState({ tech: '', difficulty: 'Medium', num: 1, testCases: 10 });
   const [codingLoading, setCodingLoading] = useState(false);
   const [codingQ, setCodingQ] = useState(null);
   const [codingAns, setCodingAns] = useState('');
@@ -121,6 +424,13 @@ export default function Partices() {
     resumeText: ''
   });
 
+  // History Detail Modal States
+  const [showHistoryDetail, setShowHistoryDetail] = useState(false);
+  const [selectedHistorySession, setSelectedHistorySession] = useState(null);
+  const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+
+
+
   // Load practice history
   const loadHistory = async () => {
     try {
@@ -129,9 +439,16 @@ export default function Partices() {
       const token = localStorage.getItem('token');
       let currentUser = null;
       try { currentUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch {}
-      const res = await axios.get('http://localhost:8080/api/candidate/practice/history?limit=25', {
+      
+      console.log('🔄 Loading practice history...');
+      console.log('Token:', token ? 'Present' : 'Missing');
+      console.log('User:', currentUser);
+      
+      const res = await axios.get(`/api/candidate/practice/history`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      console.log('✅ History response:', res.data);
       const data = res?.data;
       // Accept {sessions:[...]}, or array directly, or fallback key names
       const sessions = Array.isArray(data)
@@ -154,11 +471,13 @@ export default function Partices() {
         const tsOk = !!formatDateTime(ts);
         return hasQuestions || hasTechs || hasCompleted || hasTotals || tsOk;
       });
+      console.log('📊 Filtered sessions:', filtered);
       setPracticeHistory(filtered);
       setHistoryStats(Array.isArray(stats) ? stats : []);
     } catch (err) {
-      console.error('Failed to load history:', err);
-      setHistoryError('Unable to load practice history.');
+      console.error('❌ Failed to load history:', err);
+      console.error('Error details:', err.response?.data || err.message);
+      setHistoryError(`Unable to load practice history: ${err.response?.data?.error || err.message}`);
       setPracticeHistory([]);
       setHistoryStats([]);
     } finally {
@@ -176,11 +495,28 @@ export default function Partices() {
   const savePracticeSession = async (sessionData) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:8080/api/candidate/practice/save-session', sessionData, {
+      await axios.post(`/api/candidate/practice/save-session`, sessionData, {
         headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
       console.error('Failed to save session:', err);
+    }
+  };
+
+  // Load session details for history modal
+  const loadSessionDetails = async (sessionId) => {
+    try {
+      setSessionDetailLoading(true);
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`/api/candidate/practice/sessions/${sessionId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return res.data;
+    } catch (err) {
+      console.error('Failed to load session details:', err);
+      return null;
+    } finally {
+      setSessionDetailLoading(false);
     }
   };
 
@@ -193,63 +529,50 @@ export default function Partices() {
     
     setMcqLoading(true);
     setMcqs([]);
-    setMcqStarted(false);
-    setMcqScore(null);
     setStartTime(new Date());
     
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:8080/api/candidate/practice/mcqs', {
-        tech: mcqInput.tech,
-        num: mcqInput.num,
+      const res = await axios.post(`/api/candidate/practice/ai-mcqs`, {
+        topic: mcqInput.tech,
+        numQuestions: mcqInput.num,
         difficulty: mcqInput.difficulty
       }, { headers: { Authorization: `Bearer ${token}` } });
       
+      console.log('MCQ Response:', res.data);
+      
       if (res.data && res.data.length > 0) {
-        setMcqs(res.data);
+        // Backend now sends data in the correct format already
+        const convertedMcqs = res.data.map(q => ({
+          q: q.q,
+          options: q.options,
+          answer: q.answer,
+          technology: q.technology || mcqInput.tech,
+          explanation: q.explanation
+        }));
+        console.log('Converted MCQs:', convertedMcqs);
+        setMcqs(convertedMcqs);
         setMcqDialog(false);
-        setMode('mcq');
+        // Keep mode as 'mcq' so the Start Test button shows
       } else {
+        console.error('No questions in response:', res.data);
         alert('Failed to generate questions. Please try again.');
       }
     } catch (err) {
       console.error('MCQ Generation Error:', err);
-      alert('Failed to generate questions. Please check your input and try again.');
+      
+      // Handle AI service unavailable error
+      if (err.response && err.response.status === 503) {
+        const errorData = err.response.data;
+        alert(`${errorData.error}\n\n${errorData.message}\n\nSuggestions:\n• ${errorData.suggestions.join('\n• ')}`);
+      } else {
+        alert('Failed to generate questions. Please check your input and try again.');
+      }
       setMcqs([]);
     }
     setMcqLoading(false);
   };
   
-  const handleSubmitMcqs = async () => {
-    let score = 0;
-    const questionsWithAnswers = mcqs.map((q, i) => {
-      const isCorrect = mcqAnswers[i] === q.answer;
-      if (isCorrect) score++;
-      return {
-        question: q.q,
-        userAnswer: mcqAnswers[i],
-        correctAnswer: q.answer,
-        isCorrect,
-        technology: q.technology
-      };
-    });
-    
-    const endTime = new Date();
-    const timeSpent = startTime ? Math.round((endTime - startTime) / 60000) : 0; // minutes
-    
-    const sessionData = {
-      type: 'mcq',
-      technologies: mcqInput.tech.split(',').map(t => t.trim()),
-      difficulty: mcqInput.difficulty,
-      score,
-      totalQuestions: mcqs.length,
-      timeSpent,
-      questions: questionsWithAnswers
-    };
-    
-    await savePracticeSession(sessionData);
-    setMcqScore({ score, total: mcqs.length, timeSpent });
-  };
 
   // Coding Handlers
   const handleGenerateCoding = async () => {
@@ -266,21 +589,38 @@ export default function Partices() {
     
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:8080/api/candidate/practice/coding', {
-        tech: codingInput.tech,
-        difficulty: codingInput.difficulty
+      const res = await axios.post(`/api/candidate/practice/ai-coding`, {
+        topic: codingInput.tech,
+        difficulty: codingInput.difficulty,
+        numProblems: codingInput.num,
+        testCases: codingInput.testCases
       }, { headers: { Authorization: `Bearer ${token}` } });
       
-      if (res.data) {
-        setCodingQ(res.data);
+      if (res.data && res.data.length > 0) {
+        // Backend returns array of problems, take the first one
+        const problem = res.data[0];
+        const convertedProblem = {
+          title: problem.title,
+          difficulty: problem.difficulty,
+          description: problem.problemContent,
+          technology: codingInput.tech
+        };
+        setCodingQ(convertedProblem);
         setCodingDialog(false);
-        setMode('coding');
+        // Keep mode as 'coding' so the Start Test button shows
       } else {
         alert('Failed to generate coding question. Please try again.');
       }
     } catch (err) {
       console.error('Coding Generation Error:', err);
-      alert('Failed to generate coding question. Please try again.');
+      
+      // Handle AI service unavailable error
+      if (err.response && err.response.status === 503) {
+        const errorData = err.response.data;
+        alert(`${errorData.error}\n\n${errorData.message}\n\nSuggestions:\n• ${errorData.suggestions.join('\n• ')}`);
+      } else {
+        alert('Failed to generate coding question. Please try again.');
+      }
       setCodingQ(null);
     }
     setCodingLoading(false);
@@ -305,6 +645,7 @@ export default function Partices() {
       timeSpent,
       questions: [{
         question: codingQ.title,
+        options: [], // No options for coding questions
         userAnswer: codingAns,
         correctAnswer: 'Multiple solutions possible',
         isCorrect: score >= 70,
@@ -479,17 +820,56 @@ export default function Partices() {
                       })()}
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ 
-                      fontSize: '18px', 
-                      fontWeight: '700', 
-                      color: (session.percentage || 0) >= 80 ? '#10b981' : (session.percentage || 0) >= 60 ? '#3b82f6' : '#ef4444'
-                    }}>
-                      {(session.percentage ?? Math.round(((session.score || 0) * 100) / Math.max(1, (session.totalQuestions || 0))))}%
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ 
+                        fontSize: '18px', 
+                        fontWeight: '700', 
+                        color: (session.percentage || 0) >= 80 ? '#10b981' : (session.percentage || 0) >= 60 ? '#3b82f6' : '#ef4444'
+                      }}>
+                        {(session.percentage ?? Math.round(((session.score || 0) * 100) / Math.max(1, (session.totalQuestions || 0))))}%
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+                        {(session.score ?? 0)}/{(session.totalQuestions ?? 0)}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                      {(session.score ?? 0)}/{(session.totalQuestions ?? 0)}
-                    </div>
+                    {(session.id || session._id) && (
+                      <button
+                        className="btn"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          background: '#374151',
+                          border: '1px solid #4b5563',
+                          borderRadius: '6px',
+                          color: '#e5e7eb',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const sessionDetails = await loadSessionDetails(session.id || session._id);
+                          if (sessionDetails) {
+                            setSelectedHistorySession(sessionDetails);
+                            setShowHistoryDetail(true);
+                          } else {
+                            // Fallback to basic session data if detailed fetch fails
+                            setSelectedHistorySession(session);
+                            setShowHistoryDetail(true);
+                          }
+                        }}
+                        onMouseOver={(e) => {
+                          e.target.style.background = '#4b5563';
+                          e.target.style.borderColor = '#6b7280';
+                        }}
+                        onMouseOut={(e) => {
+                          e.target.style.background = '#374151';
+                          e.target.style.borderColor = '#4b5563';
+                        }}
+                      >
+                        View Details
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -504,12 +884,9 @@ export default function Partices() {
       )}
 
         {/* Practice Mode Buttons */}
-        {!(mcqStarted && mode === 'mcq' && !mcqScore) && !showHistory && (
+        {!showHistory && (
           <div className="practice-cards-grid">
-            <div 
-              className="practice-card mcq"
-              onClick={() => { setMode('mcq'); setMcqDialog(true); }}
-            >
+            <div className="practice-card mcq">
               <div className="practice-card-icon">
                 <FiBook size={48} />
               </div>
@@ -517,12 +894,55 @@ export default function Partices() {
               <p className="practice-card-description">
                 Test your knowledge with multiple choice questions across various technologies
               </p>
+              <div className="practice-card-actions">
+                {mcqs.length > 0 && mode === 'mcq' ? (
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <button 
+                      className="start-test-btn"
+                      onClick={() => {
+                        // Map MCQ format to match what MCQs.jsx expects
+                        const mappedQuestions = mcqs.map((q, idx) => ({
+                          id: `mcq-${idx + 1}`,
+                          question: q.q,
+                          options: q.options,
+                          correctAnswer: q.answer,
+                          technology: q.technology
+                        }));
+                        
+                        navigate('/candidate/mcqs', {
+                          state: {
+                            questions: mappedQuestions,
+                            timerEnabled: mcqTimerEnabled,
+                            timerMinutes: mcqTimerMinutes
+                          }
+                        });
+                      }}
+                    >
+                      <FiBook size={16} />
+                      Start Test
+                    </button>
+                    <button 
+                      className="start-test-btn"
+                      style={{ background: '#6b7280' }}
+                      onClick={() => { setMcqDialog(true); }}
+                    >
+                      <FiRefreshCw size={16} />
+                      Generate New
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    className="start-test-btn"
+                    onClick={() => { setMode('mcq'); setMcqDialog(true); }}
+                  >
+                    <FiBook size={16} />
+                    Generate Test
+                  </button>
+                )}
+              </div>
             </div>
             
-            <div 
-              className="practice-card coding"
-              onClick={() => { setMode('coding'); setCodingDialog(true); }}
-            >
+            <div className="practice-card coding">
               <div className="practice-card-icon">
                 <FiCode size={48} />
               </div>
@@ -530,12 +950,48 @@ export default function Partices() {
               <p className="practice-card-description">
                 Solve real-world programming problems and improve your coding skills
               </p>
+              <div className="practice-card-actions">
+                {codingQ && mode === 'coding' ? (
+                  <button 
+                    className="start-test-btn"
+                    onClick={() => {
+                      const count = Math.max(1, Math.min(5, parseInt(codingInput.num) || 1));
+                      const mapped = Array.from({ length: count }).map((_, idx) => ({
+                        id: Date.now() + idx,
+                        title: codingQ.title || 'Coding Problem',
+                        difficulty: codingQ.difficulty || codingInput.difficulty,
+                        description: codingQ.description || 'Solve this coding problem.',
+                        examples: Array.isArray(codingQ.examples) ? codingQ.examples : [],
+                        constraints: Array.isArray(codingQ.constraints) ? codingQ.constraints : [],
+                        starterCode: codingQ.starterCode || {},
+                        technology: codingQ.technology || codingInput.tech || 'General'
+                      }));
+                      
+                      navigate('/candidate/coding', {
+                        state: {
+                          problems: mapped,
+                          timerEnabled: codingTimerEnabled,
+                          timerMinutes: codingTimerMinutes
+                        }
+                      });
+                    }}
+                  >
+                    <FiCode size={16} />
+                    Start Test
+                  </button>
+                ) : (
+                  <button 
+                    className="start-test-btn"
+                    onClick={() => { setMode('coding'); setCodingDialog(true); }}
+                  >
+                    <FiCode size={16} />
+                    Generate Test
+                  </button>
+                )}
+              </div>
             </div>
             
-            <div 
-              className="practice-card interview"
-              onClick={() => { setMode('interview'); setInterviewDialog(true); }}
-            >
+            <div className="practice-card interview">
               <div className="practice-card-icon">
                 <FiMic size={48} />
               </div>
@@ -543,6 +999,15 @@ export default function Partices() {
               <p className="practice-card-description">
                 Practice interview questions and scenarios to ace your next interview
               </p>
+              <div className="practice-card-actions">
+                <button 
+                  className="start-test-btn"
+                  onClick={() => { setMode('interview'); setInterviewDialog(true); }}
+                >
+                  <FiMic size={16} />
+                  Generate Interview
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -560,10 +1025,11 @@ export default function Partices() {
               
               <div className="form-group">
                 <label className="form-label">Technologies</label>
-                <TechTagsInput 
-                  placeholder="Add a technology and press Enter"
+                <AutocompleteInput 
+                  placeholder="Type topics separated by commas (e.g., JavaScript, Python, DBMS)..."
                   value={mcqInput.tech}
                   onChange={tech => setMcqInput({ ...mcqInput, tech })}
+                  suggestions={MCQ_TOPICS}
                 />
               </div>
               
@@ -652,50 +1118,6 @@ export default function Partices() {
           </div>
         </div>
       )}
-      {/* MCQ Loading/Start/Test */}
-      {mode === 'mcq' && !mcqDialog && (
-        <div>
-          {mcqLoading && <div>Loading MCQs...</div>}
-          {!mcqLoading && mcqs.length > 0 && !mcqStarted && (
-            <button
-              style={btnStyle}
-              onClick={() => {
-                // If you still want to keep inline mode for fallback, keep setMcqStarted(true)
-                // setMcqStarted(true);
-                const mapped = mcqs.map((q, idx) => ({
-                  id: idx + 1,
-                  question: q.q,
-                  options: q.options,
-                  correctAnswer: q.answer,
-                  technology: q.technology
-                }));
-                navigate('/candidate/mcqs', {
-                  state: {
-                    questions: mapped,
-                    timerEnabled: mcqTimerEnabled,
-                    timerMinutes: mcqTimerEnabled ? mcqTimerMinutes : null
-                  }
-                });
-              }}
-            >
-              Start Test
-            </button>
-          )}
-          {!mcqLoading && mcqStarted && !mcqScore && (
-            <MCQStepper
-              mcqs={mcqs}
-              mcqAnswers={mcqAnswers}
-              setMcqAnswers={setMcqAnswers}
-              onSubmit={handleSubmitMcqs}
-              timerEnabled={mcqTimerEnabled}
-              timerMinutes={mcqTimerEnabled ? mcqTimerMinutes : null}
-            />
-          )}
-          {mcqScore && (
-            <ScoreBoard score={mcqScore.score} total={mcqScore.total} />
-          )}
-        </div>
-      )}
 
       {/* Coding Dialog */}
       {codingDialog && (
@@ -710,10 +1132,11 @@ export default function Partices() {
             
             <div className="form-group">
               <label className="form-label">Technologies</label>
-              <TechTagsInput 
-                placeholder="Add a technology and press Enter"
+              <AutocompleteInput 
+                placeholder="Type DSA topics separated by commas (e.g., Arrays, Trees, Dynamic Programming)..."
                 value={codingInput.tech}
                 onChange={tech => setCodingInput({ ...codingInput, tech })}
+                suggestions={DSA_TOPICS}
               />
             </div>
             
@@ -739,6 +1162,22 @@ export default function Partices() {
                   <option key={n} value={n}>{n}</option>
                 ))}
               </select>
+            </div>
+            
+            <div className="form-group">
+              <label className="form-label">Number of Test Cases</label>
+              <select
+                className="form-input"
+                value={codingInput.testCases}
+                onChange={e => setCodingInput({ ...codingInput, testCases: Math.max(5, Math.min(20, parseInt(e.target.value) || 10)) })}
+              >
+                {[5,8,10,12,15,20].map(n => (
+                  <option key={n} value={n}>{n} test cases</option>
+                ))}
+              </select>
+              <small style={{ color: '#9ca3af', fontSize: '12px', marginTop: '4px' }}>
+                More test cases = better problem validation
+              </small>
             </div>
             
             {/* Timer Controls (match MCQ dialog) */}
@@ -796,81 +1235,6 @@ export default function Partices() {
               </button>
             </div>
           </div>
-        </div>
-      )}
-      {/* Coding Loading/Start/Test */}
-      {mode === 'coding' && !codingDialog && (
-        <div style={{ width: '100%' }}>
-          {codingLoading && (
-            <div style={{ textAlign: 'center', padding: '40px 0' }}>
-              <div style={spinnerStyle}></div>
-              <div style={{ marginTop: 16, color: '#6b7280' }}>Generating coding challenge...</div>
-            </div>
-          )}
-          
-          {!codingLoading && codingQ && (
-            <button
-              style={btnStyle}
-              onClick={() => {
-                const count = Math.max(1, Math.min(5, parseInt(codingInput.num) || 1));
-                const base = {
-                  title: codingQ.title,
-                  difficulty: codingQ.difficulty || codingInput.difficulty,
-                  description: codingQ.description || '',
-                  examples: Array.isArray(codingQ.examples) ? codingQ.examples : [],
-                  constraints: Array.isArray(codingQ.constraints) ? codingQ.constraints : [],
-                  starterCode: { javascript: codingQ.starter || '' },
-                  technology: codingQ.technology || (codingInput.tech || 'General')
-                };
-                const mapped = Array.from({ length: count }).map((_, idx) => ({
-                  id: idx + 1,
-                  ...base
-                }));
-                navigate('/candidate/coding', {
-                  state: {
-                    problems: mapped,
-                    timerEnabled: codingTimerEnabled,
-                    timerMinutes: codingTimerEnabled ? codingTimerMinutes : null
-                  }
-                });
-              }}
-            >
-              Start Test
-            </button>
-          )}
-          
-          {codingScore && (
-            <div style={{
-              marginTop: 24,
-              background: 'linear-gradient(135deg, #0f172a 0%, #111827 100%)',
-              borderRadius: 16,
-              padding: 24,
-              textAlign: 'center',
-              border: '1px solid #1f2937'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
-                <FiAward size={24} style={{ color: '#667eea' }} />
-                <h3 style={{ margin: 0, color: '#e5e7eb' }}>Solution Analysis</h3>
-              </div>
-              <div style={{ 
-                fontSize: '32px', 
-                fontWeight: '700', 
-                color: codingScore.score >= 70 ? '#10b981' : codingScore.score >= 50 ? '#f59e0b' : '#ef4444',
-                marginBottom: 8
-              }}>
-                {codingScore.score}/100
-              </div>
-              <div style={{ color: '#e5e7eb', fontWeight: '600', marginBottom: 12 }}>
-                {codingScore.feedback}
-              </div>
-              {codingScore.timeSpent && (
-                <div style={{ fontSize: '14px', color: '#9ca3af', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                  <FiClock size={14} />
-                  Time spent: {codingScore.timeSpent} minutes
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -1000,6 +1364,249 @@ export default function Partices() {
           </div>
         </div>
       )}
+
+      {/* History Detail Modal */}
+      {showHistoryDetail && selectedHistorySession && (
+        <div className="modal-overlay">
+          <div className="modal-dialog" style={{ maxWidth: '800px', maxHeight: '80vh', overflow: 'auto' }}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                {String(selectedHistorySession.type || 'session').toUpperCase()} Practice Details
+              </h3>
+              <button 
+                className="close-button" 
+                onClick={() => {
+                  setShowHistoryDetail(false);
+                  setSelectedHistorySession(null);
+                }}
+                aria-label="Close"
+              >
+                <span style={{ fontSize: 20, fontWeight: 800 }}>×</span>
+              </button>
+            </div>
+            
+            <div style={{ padding: '20px' }}>
+              {sessionDetailLoading ? (
+                <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                  <div style={spinnerStyle}></div>
+                  <div style={{ marginTop: 16, color: '#6b7280' }}>Loading session details...</div>
+                </div>
+              ) : (
+                <>
+              {/* Session Summary */}
+              <div style={{ 
+                background: '#1a2236', 
+                borderRadius: '12px', 
+                padding: '16px', 
+                marginBottom: '20px',
+                border: '1px solid #2b3a55'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#e5e7eb' }}>
+                      {Array.isArray(selectedHistorySession.technologies) && selectedHistorySession.technologies.length > 0
+                        ? selectedHistorySession.technologies.join(', ')
+                        : 'Practice Session'}
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#9ca3af' }}>
+                      {selectedHistorySession.difficulty} • {formatDateTime(
+                        selectedHistorySession.created_at || 
+                        selectedHistorySession.createdAt || 
+                        selectedHistorySession.startedAt || 
+                        selectedHistorySession.timestamp
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ 
+                      fontSize: '24px', 
+                      fontWeight: '700', 
+                      color: (selectedHistorySession.percentage || 0) >= 80 ? '#10b981' : 
+                             (selectedHistorySession.percentage || 0) >= 60 ? '#3b82f6' : '#ef4444'
+                    }}>
+                      {selectedHistorySession.percentage ?? Math.round(((selectedHistorySession.score || 0) * 100) / Math.max(1, (selectedHistorySession.totalQuestions || 0)))}%
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#9ca3af' }}>
+                      {selectedHistorySession.score ?? 0}/{selectedHistorySession.totalQuestions ?? 0} correct
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Questions and Answers */}
+              <div style={{ marginBottom: '20px' }}>
+                <h4 style={{ color: '#e5e7eb', marginBottom: '16px', fontSize: '18px' }}>Questions & Answers</h4>
+                {Array.isArray(selectedHistorySession.questions) && selectedHistorySession.questions.length > 0 ? (
+                  selectedHistorySession.questions.map((q, index) => (
+                  <div key={index} style={{
+                    background: '#0b1220',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    marginBottom: '16px',
+                    border: `2px solid ${q.isCorrect ? '#10b981' : '#ef4444'}`
+                  }}>
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ 
+                        fontSize: '16px', 
+                        fontWeight: '600', 
+                        color: '#e5e7eb',
+                        marginBottom: '12px'
+                      }}>
+                        Question {index + 1}
+                      </div>
+                      <div style={{ fontSize: '15px', color: '#d1d5db', lineHeight: '1.5', marginBottom: '16px' }}>
+                        {q.question}
+                      </div>
+                      
+                      {/* Show options if available */}
+                      {Array.isArray(q.options) && q.options.length > 0 ? (
+                        <div style={{ marginBottom: '16px' }}>
+                          <div style={{ fontSize: '14px', color: '#9ca3af', marginBottom: '8px' }}>Options:</div>
+                          {q.options.map((option, optionIndex) => {
+                            const isUserAnswer = q.userAnswer === optionIndex.toString() || q.userAnswer === option;
+                            const isCorrectAnswer = q.correctAnswer === optionIndex.toString() || q.correctAnswer === option;
+                            
+                            let backgroundColor = '#1f2937';
+                            let borderColor = '#374151';
+                            let textColor = '#d1d5db';
+                            
+                            if (isCorrectAnswer) {
+                              backgroundColor = 'rgba(16, 185, 129, 0.15)';
+                              borderColor = '#10b981';
+                              textColor = '#10b981';
+                            } else if (isUserAnswer && !q.isCorrect) {
+                              backgroundColor = 'rgba(239, 68, 68, 0.15)';
+                              borderColor = '#ef4444';
+                              textColor = '#ef4444';
+                            }
+                            
+                            return (
+                              <div
+                                key={optionIndex}
+                                style={{
+                                  padding: '12px 16px',
+                                  marginBottom: '8px',
+                                  borderRadius: '8px',
+                                  border: `2px solid ${borderColor}`,
+                                  background: backgroundColor,
+                                  color: textColor,
+                                  fontWeight: (isCorrectAnswer || (isUserAnswer && !q.isCorrect)) ? '600' : '400',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '12px'
+                                }}
+                              >
+                                <span style={{ 
+                                  minWidth: '24px', 
+                                  height: '24px', 
+                                  borderRadius: '50%', 
+                                  background: borderColor, 
+                                  color: '#fff', 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  justifyContent: 'center', 
+                                  fontSize: '12px', 
+                                  fontWeight: '600' 
+                                }}>
+                                  {String.fromCharCode(65 + optionIndex)}
+                                </span>
+                                <span style={{ flex: 1 }}>{option}</span>
+                                {isCorrectAnswer && (
+                                  <FiCheck size={16} style={{ color: '#10b981' }} />
+                                )}
+                                {isUserAnswer && !q.isCorrect && (
+                                  <FiX size={16} style={{ color: '#ef4444' }} />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        /* Fallback for non-MCQ questions or missing options */
+                        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                          <div>
+                            <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>Your Answer:</div>
+                            <div style={{ 
+                              fontSize: '14px', 
+                              color: q.isCorrect ? '#10b981' : '#ef4444',
+                              fontWeight: '600',
+                              padding: '8px 12px',
+                              background: q.isCorrect ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                              borderRadius: '6px',
+                              display: 'inline-block'
+                            }}>
+                              {q.userAnswer || 'No answer'}
+                            </div>
+                          </div>
+                          
+                          {!q.isCorrect && (
+                            <div>
+                              <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>Correct Answer:</div>
+                              <div style={{ 
+                                fontSize: '14px', 
+                                color: '#10b981',
+                                fontWeight: '600',
+                                padding: '8px 12px',
+                                background: 'rgba(16, 185, 129, 0.1)',
+                                borderRadius: '6px',
+                                display: 'inline-block'
+                              }}>
+                                {q.correctAnswer}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Status indicator */}
+                    <div style={{ 
+                      marginTop: '12px', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      color: q.isCorrect ? '#10b981' : '#ef4444'
+                    }}>
+                      {q.isCorrect ? (
+                        <>
+                          <FiCheck size={16} />
+                          Correct
+                        </>
+                      ) : (
+                        <>
+                          <FiX size={16} />
+                          Incorrect
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  ))
+                ) : (
+                  <div style={{ 
+                    textAlign: 'center', 
+                    padding: '40px 20px',
+                    color: '#9ca3af',
+                    background: '#0b1220',
+                    borderRadius: '12px',
+                    border: '1px solid #374151'
+                  }}>
+                    <FiAlertCircle size={48} style={{ margin: '0 auto 16px', opacity: 0.7 }} />
+                    <div style={{ fontSize: '16px', marginBottom: '8px' }}>No detailed questions available</div>
+                    <div style={{ fontSize: '14px' }}>
+                      This practice session was completed before detailed question tracking was enabled.
+                    </div>
+                  </div>
+                )}
+              </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );
@@ -1036,7 +1643,26 @@ function MCQStepper({ mcqs, mcqAnswers, setMcqAnswers, onSubmit, timerEnabled, t
     return `${mm}:${ss}`;
   };
 
+  // Safety check for questions
+  if (!mcqs || mcqs.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>
+        <FiAlertCircle size={48} style={{ margin: '0 auto 16px', opacity: 0.7 }} />
+        <div>No questions available. Please generate questions first.</div>
+      </div>
+    );
+  }
+
   const q = mcqs[current];
+  if (!q) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px', color: '#9ca3af' }}>
+        <FiAlertCircle size={48} style={{ margin: '0 auto 16px', opacity: 0.7 }} />
+        <div>Question not found. Please try again.</div>
+      </div>
+    );
+  }
+
   return (
     <div className="mcq-container">
       {/* Header with timer and progress */}

@@ -2,12 +2,11 @@ html, body, #root {
   margin: 0;
   padding: 0;
   width: 100%;
-  height: 100%;
-  overflow: hidden;
+  min-height: 100vh;
 }
 
 .dashboard-root {
-  min-height: 100%;
+  min-height: 100vh;
   width: 100%;
   background: #0b1220;
   display: flex;
@@ -15,12 +14,6 @@ html, body, #root {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
 }
 .dashboard-header {
   background: #0f1629;
@@ -31,7 +24,12 @@ html, body, #root {
   font-size: 1.2rem;
   font-weight: 500;
   box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-  /* removed green bottom border */
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  height: 70px;
 }
 
 .dynamic-gradient-text {
@@ -66,12 +64,11 @@ html, body, #root {
   display: flex;
   flex: 1;
   width: 100%;
-  /* let header take natural height; allow children to size correctly */
-  min-height: 0;
-  overflow: hidden;
+  min-height: calc(100vh - 70px);
   margin: 0;
   padding: 0;
   position: relative;
+  padding-top: 70px;
 }
 .dashboard-sidebar {
   background: #0f1629;
@@ -83,8 +80,12 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease, padding 0.3s ease;
-  /* removed green right border */
   overflow: hidden;
+  position: fixed;
+  top: 70px;
+  left: 0;
+  bottom: 0;
+  z-index: 999;
 }
 
 .dashboard-sidebar:hover {
@@ -163,15 +164,44 @@ html, body, #root {
 .logout-btn:hover {
   background: #d9363e;
 }
+
+.sidebar-version {
+  margin-top: auto;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.7rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0f172a;
+  min-height: 44px;
+}
+
+.dashboard-sidebar:hover .sidebar-version {
+  justify-content: flex-start;
+  padding: 0.7rem 1rem;
+}
+
+.sidebar-version-compact {
+  display: inline-block;
+}
+
+.dashboard-sidebar:hover .sidebar-version-compact {
+  display: none;
+}
 .dashboard-main {
   flex: 1;
-  padding: 0;
+  padding: 1rem;
   margin: 0;
+  margin-left: 70px;
   min-width: 0;
   background: #0b1220;
   overflow-y: auto;
-  height: 100%;
-  display: block; /* full-width content */
+  min-height: calc(100vh - 70px);
+  display: block;
   box-sizing: border-box;
 }
 

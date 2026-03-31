@@ -30,6 +30,24 @@ const OAuth2RedirectHandler = () => {
           }, 2500);
           return;
         }
+        
+        if (error === 'user_not_registered') {
+          const message = urlParams.get('message') || 'Please register first before logging in';
+          const redirectTo = urlParams.get('redirect');
+          setStatus(message + ' Redirecting to registration...');
+          showError(message);
+          // Clear login context and redirect to registration
+          sessionStorage.removeItem('oauth2_context');
+          setTimeout(() => {
+            if (redirectTo === 'register') {
+              navigate('/', { state: { showRegister: true, email: email } });
+            } else {
+              navigate('/', { state: { showRegister: true } });
+            }
+          }, 2500);
+          return;
+        }
+        
         setStatus(`Authentication failed: ${error}`);
         showError(`OAuth2 authentication failed: ${error}`);
         setTimeout(() => {
@@ -55,8 +73,17 @@ const OAuth2RedirectHandler = () => {
           
           localStorage.setItem('user', JSON.stringify(userData));
           
-          setStatus(`Welcome ${firstName}! Redirecting to your dashboard...`);
-          showSuccess(`Welcome ${firstName}! Login successful via ${oAuth2Provider}`);
+          // Check if this was a registration flow
+          const oauth2Context = sessionStorage.getItem('oauth2_context');
+          if (oauth2Context === 'register') {
+            setStatus(`Registration successful! Welcome ${firstName}!`);
+            showSuccess(`Registration successful via ${oAuth2Provider}! Welcome ${firstName}!`);
+            sessionStorage.removeItem('oauth2_context');
+            sessionStorage.removeItem('oauth2_role');
+          } else {
+            setStatus(`Welcome ${firstName}! Redirecting to your dashboard...`);
+            showSuccess(`Welcome ${firstName}! Login successful via ${oAuth2Provider}`);
+          }
           
           // Redirect based on user role
           setTimeout(() => {
@@ -78,10 +105,21 @@ const OAuth2RedirectHandler = () => {
           }, 2000);
         }
       } else {
-        setStatus('No authentication token received. Redirecting to login...');
-        showError('No authentication token received. Please try again.');
+        // Check if this was a registration attempt
+        const oauth2Context = sessionStorage.getItem('oauth2_context');
+        setStatus('No authentication token received. Redirecting...');
+        showError('Authentication failed. Please try again.');
+        
+        // Clean up session storage
+        sessionStorage.removeItem('oauth2_context');
+        sessionStorage.removeItem('oauth2_role');
+        
         setTimeout(() => {
-          navigate('/login');
+          if (oauth2Context === 'register') {
+            navigate('/', { state: { showRegister: true } });
+          } else {
+            navigate('/');
+          }
         }, 2000);
       }
     };

@@ -257,22 +257,22 @@
 
 /* Responsive design for mobile */
 @media (max-width: 768px) {
-  .dashboard-container {
+  .dashboard-container.mobile-layout-enabled {
     padding: 16px !important;
   }
   
-  .profile-card {
+  .dashboard-container.mobile-layout-enabled .profile-card {
     flex-direction: column !important;
     text-align: center !important;
   }
   
   /* 4 cards in 1 row on mobile - stack to 2x2 */
-  .stats-grid {
+  .dashboard-container.mobile-layout-enabled .stats-grid {
     grid-template-columns: repeat(2, 1fr) !important;
   }
   
   /* Charts stack vertically on mobile */
-  .charts-grid {
+  .dashboard-container.mobile-layout-enabled .charts-grid {
     grid-template-columns: 1fr !important;
   }
 }

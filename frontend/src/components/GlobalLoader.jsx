@@ -1,41 +1,108 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useLoading } from '../contexts/LoadingContext';
 
 const GlobalLoader = () => {
   const { isLoading } = useLoading();
+  const dotsRef = useRef(null);
+
+  useEffect(() => {
+    if (!isLoading) return;
+    
+    const timer = setTimeout(() => {
+      if (dotsRef.current) {
+        dotsRef.current.style.display = 'block';
+      }
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
   if (!isLoading) return null;
 
   return (
     <div className="loader-overlay">
       <style>{`
-        .loader-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: transparent; display: flex; justify-content: center; align-items: center; z-index: 9999; }
-        .loader-text { font-size: 20px; font-weight: bold; font-family: "Segoe UI", sans-serif; display: flex; gap: 5px; text-transform: uppercase; perspective: 1000px; }
-        .loader-text span { display: inline-block; opacity: 0; transform: translateY(30px) scale(0.8) rotateX(0deg); background: linear-gradient(90deg, #1a73e8, #00c6ff, #1a73e8); background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent; animation: bounceGlow 2s infinite, gradientShift 3s infinite linear, flicker 1.5s infinite alternate; animation-timing-function: ease-in-out; }
-        @keyframes gradientShift { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
-        @keyframes bounceGlow { 0% { opacity: 0; transform: translateY(30px) scale(0.8) rotateX(0deg); text-shadow: none; } 20% { opacity: 1; transform: translateY(-12px) scale(1.15) rotateX(15deg); text-shadow: 0 0 12px rgba(0,198,255,0.8); } 40% { transform: translateY(0) scale(1) rotateX(-10deg); text-shadow: 0 0 18px rgba(26,115,232,0.9); } 60% { transform: translateY(-6px) scale(1.05) rotateX(8deg); text-shadow: 0 0 15px rgba(0,198,255,0.6); } 80% { transform: translateY(0) scale(1) rotateX(0deg); opacity: 1; text-shadow: 0 0 8px rgba(26,115,232,0.5); } 100% { opacity: 0; transform: translateY(30px) scale(0.8) rotateX(-8deg); text-shadow: none; } }
-        @keyframes flicker { 0% { filter: brightness(1); } 50% { filter: brightness(1.3); } 100% { filter: brightness(0.9); } }
-        .loader-text span:nth-child(1)  { animation-delay: 0s, 0s, 0s; }
-        .loader-text span:nth-child(2)  { animation-delay: 0.12s, 0s, 0.1s; }
-        .loader-text span:nth-child(3)  { animation-delay: 0.24s, 0s, 0.2s; }
-        .loader-text span:nth-child(4)  { animation-delay: 0.36s, 0s, 0.3s; }
-        .loader-text span:nth-child(5)  { animation-delay: 0.48s, 0s, 0.4s; }
-        .loader-text span:nth-child(6)  { animation-delay: 0.6s, 0s, 0.5s; }
-        .loader-text span:nth-child(7)  { animation-delay: 0.72s, 0s, 0.6s; }
-        .loader-text span:nth-child(8)  { animation-delay: 0.84s, 0s, 0.7s; }
-        .loader-text span:nth-child(9)  { animation-delay: 0.96s, 0s, 0.8s; }
-        .loader-text span:nth-child(10) { animation-delay: 1.08s, 0s, 0.9s; }
+        .loader-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          z-index: 9999;
+        }
+        .loader {
+          position: relative;
+          width: 100px;
+          height: 100px;
+        }
+        .part {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          opacity: 0;
+          transform: scale(0.8);
+        }
+        .left {
+          animation: showLeft 1s forwards;
+        }
+        .right {
+          animation: showRight 1s forwards;
+          animation-delay: 1s;
+        }
+        .tick {
+          width: 60%;
+          height: auto;
+          top: 17%;
+          left: 23%;
+          animation: showTick 1s forwards;
+          animation-delay: 2s;
+        }
+        .dots {
+          position: absolute;
+          bottom: 8px;
+          right: 39px;
+          display: none;
+          font-size: 30px;
+          color: #f1f1f1;
+          letter-spacing: 2px;
+        }
+        .dots span {
+          opacity: 0.2;
+          animation: blink 1.5s infinite;
+        }
+        .dots span:nth-child(1) { animation-delay: 0s; }
+        .dots span:nth-child(2) { animation-delay: 0.3s; }
+        .dots span:nth-child(3) { animation-delay: 0.6s; }
+        @keyframes showLeft {
+          from { opacity: 0; transform: translateX(-30px) scale(0.8); }
+          to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes showRight {
+          from { opacity: 0; transform: translateX(30px) scale(0.8); }
+          to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+        @keyframes showTick {
+          from { opacity: 0; transform: scale(0.5) rotate(-20deg); }
+          to { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+        @keyframes blink {
+          0%, 80%, 100% { opacity: 0.2; }
+          40% { opacity: 1; }
+        }
       `}</style>
-      <div className="loader-text" aria-label="Loading SmartHireX">
-        <span>S</span>
-        <span>m</span>
-        <span>a</span>
-        <span>r</span>
-        <span>t</span>
-        <span>H</span>
-        <span>i</span>
-        <span>r</span>
-        <span>e</span>
-        <span>X</span>
+      <div className="loader">
+        <img src="/left_logo.png" className="part left" alt="Left Brain" />
+        <img src="/right_logo.png" className="part right" alt="Right Brain" />
+        <img src="/tick_logo.png" className="part tick" alt="Check Mark" />
+        <div className="dots" ref={dotsRef}>
+          <span>.</span><span>.</span><span>.</span>
+        </div>
       </div>
     </div>
   );

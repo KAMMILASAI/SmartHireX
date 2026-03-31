@@ -23,6 +23,12 @@ public class Chat {
     )
     private Set<User> participants = new HashSet<>();
 
+    @Column
+    private String chatName;
+    
+    @Column
+    private String chatType = "direct"; // "direct" or "group"
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -51,4 +57,10 @@ public class Chat {
 
     public LocalDateTime getLastActivity() { return lastActivity; }
     public void setLastActivity(LocalDateTime lastActivity) { this.lastActivity = lastActivity; }
+
+    public String getChatName() { return chatName; }
+    public void setChatName(String chatName) { this.chatName = chatName; }
+
+    public String getChatType() { return chatType; }
+    public void setChatType(String chatType) { this.chatType = chatType; }
 }

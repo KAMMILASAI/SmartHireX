@@ -1,10 +1,5 @@
 package com.SmartHireX.controller.auth;
 
-import com.SmartHireX.dto.response.AuthResponse;
-import com.SmartHireX.entity.User;
-import com.SmartHireX.security.JwtTokenProvider;
-import com.SmartHireX.security.UserPrincipal;
-import com.SmartHireX.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,7 +11,15 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+
+import com.SmartHireX.dto.response.AuthResponse;
+import com.SmartHireX.entity.User;
+import com.SmartHireX.security.JwtTokenProvider;
+import com.SmartHireX.security.UserPrincipal;
+import com.SmartHireX.service.UserService;
+
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -31,7 +34,7 @@ public class OAuth2Controller {
     @Value("${app.oauth2.redirect-uri}")
     private String redirectUri;
 
-    @Value("${app.frontend.url:https://smarthirex.netlify.app}")
+    @Value("${app.frontend.url:http://localhost:5173}")
     private String frontendUrl;
 
     private final JwtTokenProvider tokenProvider;
@@ -79,7 +82,7 @@ public class OAuth2Controller {
                 response.put("lastName", user.getLastName());
                 response.put("role", user.getRole());
                 response.put("emailVerified", user.isEmailVerified());
-                response.put("oauth2Provider", user.getOAuth2Provider());
+                response.put("oauth2Provider", user.getProvider());
             } else if (principal instanceof OAuth2User) {
                 OAuth2User oauth2User = (OAuth2User) principal;
                 response.putAll(oauth2User.getAttributes());
@@ -94,7 +97,7 @@ public class OAuth2Controller {
                         response.put("lastName", user.getLastName());
                         response.put("role", user.getRole());
                         response.put("emailVerified", user.isEmailVerified());
-                        response.put("oauth2Provider", user.getOAuth2Provider());
+                        response.put("oauth2Provider", user.getProvider());
                     });
                 }
             }
@@ -168,23 +171,36 @@ public class OAuth2Controller {
         config.put("redirectUri", redirectUri);
         config.put("frontendUrl", frontendUrl);
         config.put("googleClientId", "${spring.security.oauth2.client.registration.google.client-id}");
-        config.put("githubClientId", "${spring.security.oauth2.client.registration.github.client-id}");
         return config;
     }
 
     @GetMapping("/authorize/google")
-    public void authorizeGoogle(HttpServletResponse response, 
-                               @RequestParam(value = "redirect_uri", required = false) String redirectUri) throws Exception {
-        logger.info("Redirecting to Google OAuth2 authorization with redirect_uri: " + redirectUri);
+    public void authorizeGoogle(HttpServletResponse response, HttpServletRequest request,
+            @RequestParam(value = "redirect_uri", required = false) String redirectUri) throws Exception {
+        
+        logger.info("OAuth2 Google authorization request - redirect_uri: {}", redirectUri);
+        
         // Redirect to Spring Security's OAuth2 authorization endpoint
         response.sendRedirect("/oauth2/authorization/google");
     }
 
     @GetMapping("/authorize/github")
     public void authorizeGithub(HttpServletResponse response, 
+                               HttpServletRequest request,
                                @RequestParam(value = "redirect_uri", required = false) String redirectUri) throws Exception {
-        logger.info("Redirecting to GitHub OAuth2 authorization with redirect_uri: " + redirectUri);
+        logger.info("OAuth2 GitHub authorization request - redirect_uri: {}", redirectUri);
+        
         // Redirect to Spring Security's OAuth2 authorization endpoint
         response.sendRedirect("/oauth2/authorization/github");
+    }
+
+    @GetMapping("/authorize/apple")
+    public void authorizeApple(HttpServletResponse response, 
+                              HttpServletRequest request,
+                              @RequestParam(value = "redirect_uri", required = false) String redirectUri) throws Exception {
+        logger.info("OAuth2 Apple authorization request - redirect_uri: {}", redirectUri);
+        
+        // Redirect to Spring Security's OAuth2 authorization endpoint
+        response.sendRedirect("/oauth2/authorization/apple");
     }
 }

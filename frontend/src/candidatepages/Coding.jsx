@@ -1,16 +1,136 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
+import Editor, { loader } from '@monaco-editor/react';
 import './Coding.css';
 import './MCQs.css';
-import logo from '../assets/logo.png';
+import { FiArrowLeft, FiCode, FiTerminal, FiPlay, FiCheckCircle, FiClock, FiAlertCircle } from 'react-icons/fi';
 
-export default function Coding() {
+// Configure Monaco loader to use a reliable CDN
+loader.config({
+  paths: {
+    vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.43.0/min/vs'
+  }
+});
+
+// Helper functions to parse problem content (pure functions - defined outside component for stable references)
+const extractDescriptionFromContent = (content) => {
+  const lines = content.split('\n');
+  let description = '';
+  let inDescription = false;
+  
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.startsWith('# Problem Statement') || trimmedLine.startsWith('## Problem Statement')) {
+      inDescription = true;
+      continue;
+    }
+    if (trimmedLine.match(/^#+\s*Examples/i) || 
+        trimmedLine.match(/^#+\s*Constraints/i) || 
+        trimmedLine.match(/^\*\*Examples/i) ||
+        trimmedLine.match(/^\*\*Constraints/i)) {
+      break;
+    }
+    if (inDescription && trimmedLine) {
+      if (description && !description.endsWith('.') && !description.endsWith(':')) {
+        description += '. ';
+      } else if (description) {
+        description += ' ';
+      }
+      description += trimmedLine;
+    }
+  }
+  
+  return description.replace(/\s+/g, ' ').replace(/\.\s*\./g, '.').trim();
+};
+
+const extractExamplesFromContent = (content) => {
+  if (!content) return [];
+  const examples = [];
+  console.log('Extracting examples from content length:', content.length);
+  
+  // Method 1: Robust regex for "Example N:" format
+  // This handles both inline and multiline Input/Output, and various line endings
+  // It also captures JSON inputs like {"nums": [1,2,2,1,3,4,3,2], "k": 2}
+  const simpleExampleRegex = /Example\s*(\d+):?\s*[\r\n]+(?:[\s\S]*?)Input:\s*(.*?)\s*[\r\n]+\s*Output:\s*(.*?)(?=\s*[\r\n]+\s*Example|\s*[\r\n]+\s*Constraints|\s*[\r\n]+\s*\*\*|\s*$)/gis;
+  
+  let match;
+  while ((match = simpleExampleRegex.exec(content)) !== null) {
+    const input = match[2].trim();
+    const output = match[3].trim();
+    if (input && output) {
+      examples.push({
+        input,
+        output,
+        explanation: `Example ${match[1]}`
+      });
+      console.log(`Successfully parsed example ${match[1]}:`, { input, output });
+    }
+  }
+  
+  // Method 2: Look for Input:/Output: pairs anywhere in the text (fallback)
+  if (examples.length === 0) {
+    console.log('Method 1 failed, trying Method 2 (Input/Output pairs)...');
+    const pairRegex = /Input:\s*(.*?)\s*[\r\n]+\s*Output:\s*(.*?)(?=\s*[\r\n]|$)/gis;
+    let i = 1;
+    while ((match = pairRegex.exec(content)) !== null) {
+      examples.push({
+        input: match[1].trim(),
+        output: match[2].trim(),
+        explanation: `Example ${i++}`
+      });
+    }
+  }
+  
+  // Method 3: Look for code blocks with Input/Output
+  if (examples.length === 0) {
+    console.log('Method 2 failed, trying Method 3 (Code blocks)...');
+    const codeBlockRegex = /```[\s\S]*?Input:\s*(.*?)\s*Output:\s*(.*?)\s*```/gis;
+    let i = 1;
+    while ((match = codeBlockRegex.exec(content)) !== null) {
+      examples.push({
+        input: match[1].trim(),
+        output: match[2].trim(),
+        explanation: `Example ${i++}`
+      });
+    }
+  }
+  
+  console.log(`Total examples extracted: ${examples.length}`);
+  return examples;
+};
+
+const extractConstraintsFromContent = (content) => {
+  const constraints = [];
+  const lines = content.split('\n');
+  let inConstraints = false;
+  
+  for (const line of lines) {
+    if (line.startsWith('## Constraints')) {
+      inConstraints = true;
+      continue;
+    }
+    if (inConstraints && line.startsWith('- ')) {
+      constraints.push(line.substring(2).trim());
+    }
+  }
+  
+  return constraints;
+};
+
+export default function Coding({ 
+  onExamComplete,
+  isMixedComponent = false,
+  roundId: _propRoundId,
+  timeLimit: _propTimeLimit, 
+  problems: _propProblems
+} = {}) {
   const location = useLocation();
   const navigate = useNavigate();
-  const containerRef = useRef(null);
   const abortRef = useRef(null);
-  const navState = (location && location.state) || {};
+  const navState = useMemo(() => (location && location.state) || {}, [location]);
+  const mixedMode = isMixedComponent || navState.isMixedComponent === true;
   const [problems, setProblems] = useState([]);
   const [currentProblem, setCurrentProblem] = useState(0);
   const [solutions, setSolutions] = useState({});
@@ -26,99 +146,161 @@ export default function Coding() {
     return 0;
   });
 
-  const [isSubmitted, setIsSubmitted] = useState(false);
-  const [score, setScore] = useState(0);
   const [loading, setLoading] = useState(false);
   const [language, setLanguage] = useState('java');
-  const [showTerms, setShowTerms] = useState(false);
-  const [examStarted, setExamStarted] = useState(true);
-  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-  const [showQuestionStatus, setShowQuestionStatus] = useState(false);
-  const [theme, setTheme] = useState('dark'); // match MCQs theme handling
   const [runOutput, setRunOutput] = useState('');
   const [testResults, setTestResults] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [waitingForInput, setWaitingForInput] = useState(false);
+  const [inputPrompt, setInputPrompt] = useState('');
+  const [userInput, setUserInput] = useState('');
 
-  const query = new URLSearchParams(location.search);
-  const companyOrRecruiter =
-    query.get('company') || query.get('recruiter') || 'SmartHire Platform';
-
-  useEffect(() => {
-    // Initialize timer settings from navigation
-    if (typeof navState.timerEnabled === 'boolean') setTimerEnabled(navState.timerEnabled);
-    // If problems are provided via navigation state, use them; otherwise load from API/mock
-    if (Array.isArray(navState.problems) && navState.problems.length > 0) {
-      const provided = navState.problems;
-      setProblems(provided);
-
-      // Initialize solutions for current language if not present in localStorage
-      const storageKey = `coding_solutions_${language}`;
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        setSolutions(JSON.parse(saved));
-      } else {
-        const initialSolutions = {};
-        provided.forEach((p) => {
-          let starter = p?.starterCode?.[language] ?? '';
-          if (!starter) {
-            if (language === 'python') {
-              starter = `# Hello World (Python)\nprint(\"Hello, World!\")\n`;
-            } else if (language === 'java') {
-              starter = `// Hello World (Java)\npublic class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello, World!\");\n  }\n}\n`;
-            } else if (language === 'cpp') {
-              starter = `// Hello World (C++)\n#include <bits/stdc++.h>\nusing namespace std;\nint main(){\n  cout << \"Hello, World!\";\n  return 0;\n}\n`;
-            } else if (language === 'c') {
-              starter = `// Hello World (C)\n#include <stdio.h>\nint main(){\n  printf(\"Hello, World!\");\n  return 0;\n}\n`;
-            }
-          }
-          initialSolutions[p.id] = starter;
-        });
-        setSolutions(initialSolutions);
-        localStorage.setItem(storageKey, JSON.stringify(initialSolutions));
-      }
-    } else {
-      // Load coding problems from API/mock
-      loadProblems();
+  // Helper to get default starter code for a language
+  const getStarterCode = (lang) => {
+    if (lang === 'python') {
+      return `# GFG/HackerEarth Style Python Template\n# Read input\nn = int(input())\narr = list(map(int, input().split()))\n\n# Your solution here\nresult = sum(arr)\n\n# Print output\nprint(result)\n`;
+    } else if (lang === 'java') {
+      return `// GFG/HackerEarth Style Java Template\nimport java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        \n        // Read input\n        if (sc.hasNextInt()) {\n            int n = sc.nextInt();\n            int[] arr = new int[n];\n            for (int i = 0; i < n; i++) {\n                if (sc.hasNextInt()) arr[i] = sc.nextInt();\n            }\n            \n            // Your solution here\n            int result = 0;\n            for (int num : arr) {\n                result += num;\n            }\n            \n            // Print output\n            System.out.println(result);\n        }\n        \n        sc.close();\n    }\n}\n`;
+    } else if (lang === 'cpp') {
+      return `// GFG/HackerEarth Style C++ Template\n#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios_base::sync_with_stdio(false);\n    cin.tie(NULL);\n    \n    // Read input\n    int n;\n    if (cin >> n) {\n        vector<int> arr(n);\n        for (int i = 0; i < n; i++) {\n            cin >> arr[i];\n        }\n        \n        // Your solution here\n        int result = 0;\n        for (int num : arr) {\n            result += num;\n        }\n        \n        // Print output\n        cout << result << endl;\n    }\n    \n    return 0;\n}\n`;
+    } else if (lang === 'c') {
+      return `// GFG/HackerEarth Style C Template\n#include <stdio.h>\n\nint main() {\n    // Read input\n    int n;\n    if (scanf("%d", &n) == 1) {\n        int arr[n];\n        for (int i = 0; i < n; i++) {\n            scanf("%d", &arr[i]);\n        }\n        \n        // Your solution here\n        int result = 0;\n        for (int i = 0; i < n; i++) {\n            result += arr[i];\n        }\n        \n        // Print output\n        printf("%d\\n", result);\n    }\n    \n    return 0;\n}\n`;
     }
-  }, []);
-
-  useEffect(() => {
-    if (examStarted) {
-      // Enter fullscreen mode
-      enterFullscreen();
-      // Disable security features
-      disableSecurityFeatures();
-      // Auto-open problem status sidebar for visibility
-      setShowQuestionStatus(true);
-    }
-
-    return () => {
-      if (examStarted) {
-        enableSecurityFeatures();
-      }
-    };
-  }, [examStarted]);
-
-  // Simple JS sandbox runner (outside effects)
-  const runUserCode = (code, inputArg) => {
-    const logs = [];
-    const fakeConsole = { log: (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')) };
-    try {
-      const fn = new Function('input', 'console', `${code}\n;return (typeof solution==='function') ? solution(input) : undefined;`);
-      const result = fn(inputArg, fakeConsole);
-      return { result, logs, error: null };
-    } catch (err) {
-      return { result: null, logs, error: String(err) };
-    }
+    return '';
   };
 
-// Cancel current run/tests
+  const initializeSolutions = useCallback((problemsList) => {
+    // Initialize solutions with starter code
+    const storageKey = `coding_solutions_${language}`;
+    const saved = localStorage.getItem(storageKey);
+    
+    const initial = {};
+    const savedObj = saved ? JSON.parse(saved) : {};
+    
+    problemsList.forEach(p => {
+      // Priority: 1. LocalStorage, 2. Backend starter code, 3. Default template
+      initial[p.id] = savedObj[p.id] || p.starterCode?.[language] || getStarterCode(language);
+    });
+    
+    setSolutions(initial);
+    localStorage.setItem(storageKey, JSON.stringify(initial));
+  }, [language]);
+
+  const loadProblems = useCallback(async () => {
+    setLoading(true);
+    console.log('Loading problems, navState:', navState);
+    
+    try {
+      // If navigation already provided problems, use them directly
+      if (Array.isArray(navState.problems) && navState.problems.length > 0) {
+        console.log('Using problems from navigation:', navState.problems);
+        setProblems(navState.problems);
+        initializeSolutions(navState.problems);
+        setLoading(false);
+        return;
+      }
+      
+      // If no navigation state, try API
+      console.log('No navigation problems, trying API...');
+      let finalProblems = [];
+      
+      try {
+        // Use the current language as the technology for AI generation
+        const tech = language || 'Java';
+        const difficulty = navState.difficulty || 'Medium';
+        
+        const token = localStorage.getItem('token');
+        const resp = await axios.post(
+          '/api/candidate/practice/ai-coding',
+          { topic: tech, difficulty, numProblems: 1, testCases: 10 },
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+        );
+        const data = resp?.data;
+        console.log('Backend response:', data); // Debug log
+        
+        if (Array.isArray(data) && data.length > 0) {
+          finalProblems = data.map((q, idx) => {
+            console.log('Raw backend response for problem:', q);
+            
+            // Use structured data directly from backend if available
+            const structuredExamples = q.examples || [];
+            const structuredConstraints = q.constraints || [];
+            
+            // CRITICAL: Clean the description to remove hardcoded examples/constraints
+            const cleanDescription = (desc) => {
+              if (!desc) return '';
+              // Stop at any version of "Examples" or "Constraints" headers
+              const stopRegex = /(?:#+\s*Examples|\*\*Examples:?|\*\*Test\s*Cases:?|#+\s*Constraints|\*\*Constraints:?)/i;
+              const parts = desc.split(stopRegex);
+              return parts[0].trim();
+            };
+
+            const rawDescription = q.description || '';
+            const rawProblemContent = q.problemContent || '';
+            
+            let finalExamples = structuredExamples;
+            let finalConstraints = structuredConstraints;
+            let finalDescription = cleanDescription(rawDescription);
+            
+            // FALLBACK PARSING: If backend didn't provide structured examples, parse them from text
+            if (finalExamples.length === 0) {
+              console.log('Parsing examples from description/content fallback...');
+              // Try parsing from raw description first (since AI often dumps everything there)
+              finalExamples = extractExamplesFromContent(rawDescription);
+              
+              // If still nothing, try problemContent
+              if (finalExamples.length === 0 && rawProblemContent) {
+                finalExamples = extractExamplesFromContent(rawProblemContent);
+              }
+            }
+
+            if (finalConstraints.length === 0) {
+              finalConstraints = extractConstraintsFromContent(rawDescription);
+              if (finalConstraints.length === 0 && rawProblemContent) {
+                finalConstraints = extractConstraintsFromContent(rawProblemContent);
+              }
+            }
+
+            if (!finalDescription && rawProblemContent) {
+              finalDescription = cleanDescription(extractDescriptionFromContent(rawProblemContent));
+            }
+            
+            return {
+              id: Date.now() + idx,
+              title: q.title || 'Coding Problem',
+              difficulty: q.difficulty || difficulty,
+              description: finalDescription,
+              examples: finalExamples,
+              constraints: finalConstraints,
+              starterCode: {},
+              technology: tech,
+            };
+          });
+        }
+      } catch (e) {
+        console.error('API failed:', e);
+        finalProblems = [];
+      }
+
+      setProblems(finalProblems);
+      initializeSolutions(finalProblems);
+
+    } catch (error) {
+      console.error('Failed to load problems:', error);
+      setProblems([]);
+    }
+    setLoading(false);
+  }, [navState, initializeSolutions]);
+
+  // Cancel current run/tests
 const handleCancel = () => {
   try {
     if (abortRef.current) {
       abortRef.current.abort();
     }
-  } catch (_) {}
+  } catch {
+    // Ignore abort errors - cancellation proceeds regardless
+  }
   setIsRunning(false);
   setRunOutput((prev) => (prev ? `${prev}\nCanceled by user` : 'Canceled by user'));
 };
@@ -155,100 +337,279 @@ const handleCancel = () => {
   };
 
   const handleRun = async () => {
+    const currentProb = problems[currentProblem];
     const code = solutions[currentProb?.id] || '';
-    const first = currentProb?.examples?.[0];
-    let input = undefined;
-    if (first?.input) {
-      try { input = JSON.parse(first.input); } catch { input = first.input; }
+    
+    // Check if code uses Scanner or input() - if so, show interactive console
+    const needsInput = (
+      (language === 'java' && (code.includes('Scanner') || code.includes('nextLine') || code.includes('nextInt'))) ||
+      (language === 'python' && code.includes('input(')) ||
+      (language === 'cpp' && code.includes('cin')) ||
+      (language === 'c' && code.includes('scanf'))
+    );
+    
+    if (needsInput) {
+      // Show interactive console for user input
+      setRunOutput('🎯 Your code needs input. Please enter input below and press Enter:\n');
+      setWaitingForInput(true);
+      setInputPrompt('Enter input: ');
+      return;
     }
-    setIsRunning(true);
-    try {
-      // JS path retained for completeness (not selectable in UI)
-      if (language === 'javascript') {
-        const { result, logs, error } = runUserCode(code, input);
-        if (error) {
-          setRunOutput(`Error: ${error}\nLogs:\n${logs.join('\n')}`);
-        } else {
-          setRunOutput(`Result: ${typeof result === 'object' ? JSON.stringify(result) : String(result)}\nLogs:\n${logs.join('\n')}`);
+    
+    // For code that doesn't need input, run directly
+    let input = '';
+    const first = currentProb?.examples?.[0];
+    if (first?.input) {
+      // Handle different input formats
+      let processedInput = first.input;
+      
+      // If input looks like JSON array, convert to space/newline separated
+      if (processedInput.startsWith('[') && processedInput.endsWith(']')) {
+        try {
+          const arr = JSON.parse(processedInput);
+          processedInput = arr.join(' ') + '\n';
+        } catch {
+          processedInput = first.input + '\n';
         }
-        return;
+      } else if (processedInput.startsWith('{') && processedInput.endsWith('}')) {
+        // Handle JSON objects - extract values
+        try {
+          const obj = JSON.parse(processedInput);
+          const values = Object.values(obj);
+          processedInput = values.join(' ') + '\n';
+        } catch {
+          processedInput = first.input + '\n';
+        }
+      } else {
+        // Plain text input - ensure it ends with newline
+        processedInput = first.input + (first.input.endsWith('\n') ? '' : '\n');
       }
+      
+      input = processedInput;
+    } else {
+      // No input provided - let code run without input
+      input = '';
+    }
+    
+    await executeCode(code, input);
+  };
 
-      // Non-JS: call backend judge with timeout
+  // Function to execute code with input
+  const executeCode = async (code, input) => {
+    setIsRunning(true);
+    setRunOutput('Running code...');
+    
+    try {
+      // Call backend judge for all languages - server-side execution
       const controller = new AbortController();
       abortRef.current = controller;
+      
+      console.log('🚀 Running code:', { language, code: code.substring(0, 100) + '...', input });
+      console.log('📡 API Endpoint:', '/api/judge');
+      console.log('🌐 Full URL:', window.location.origin + '/api/judge');
+      
       const { output, error, logs } = await judgeRun({ language, code, input, timeoutMs: 20000, signal: controller.signal });
+      
+      console.log('📤 Judge response:', { output, error, logs });
+      
       if (error) {
-        setRunOutput(`Error: ${error}\nLogs:\n${(logs || []).join('\n')}`);
+        if (error.includes('Cannot run program')) {
+          setRunOutput(`❌ Compiler Error: ${language.toUpperCase()} compiler not available on server.\n\nServer needs to install:\n- For Java: JDK (javac, java)\n- For Python: Python interpreter\n- For C++: g++ compiler\n- For C: gcc compiler\n\nPlease contact admin to install compilers on server.`);
+        } else if (error.includes('No line found') || error.includes('Scanner')) {
+          setRunOutput(`❌ Input Error: Scanner.nextLine() failed - no input provided.\n\nTip: For testing, use simple input/output:\n\nExample Java code:\npublic class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello World");\n  }\n}\n\nOr handle input properly:\nScanner sc = new Scanner(System.in);\nString line = sc.nextLine();\nSystem.out.println(line);`);
+        } else {
+          const logsText = logs && logs.length ? `\n\nLogs:\n${logs.join('\n')}` : '';
+          setRunOutput(`❌ Execution Error: ${error}${logsText}`);
+        }
       } else {
-        const logsText = logs && logs.length ? `\nLogs:\n${logs.join('\n')}` : '';
-        setRunOutput(`Output: ${typeof output === 'object' ? JSON.stringify(output) : String(output)}${logsText}`);
+        const logsText = logs && logs.length ? `\n\nDebug Logs:\n${logs.join('\n')}` : '';
+        const outputText = typeof output === 'object' ? JSON.stringify(output, null, 2) : String(output);
+        setRunOutput(`Output:\n${outputText}${logsText}`);
       }
     } catch (e) {
-      setRunOutput(`Error: ${String(e)}`);
+      console.error('❌ Judge call failed:', e);
+      
+      if (e.message.includes('Network Error') || e.message.includes('ERR_NETWORK')) {
+        setRunOutput(`❌ Network Error: Cannot connect to code execution server.\n\nTroubleshooting:\n1. ✅ Check if backend server is running on localhost:8080\n2. ✅ Verify /judge endpoint is accessible\n3. ✅ Check browser console for CORS errors\n4. ✅ Ensure Vite proxy is configured correctly\n\nCurrent endpoint: /judge\nExpected server: http://localhost:8080/judge`);
+      } else if (e.message.includes('timeout') || e.code === 'ECONNABORTED') {
+        setRunOutput(`❌ Timeout Error: Code execution took too long (>20 seconds).\n\nPossible causes:\n1. Infinite loop in your code\n2. Very large input data\n3. Server overload\n\nTry:\n- Check for infinite loops\n- Use smaller test inputs\n- Optimize your algorithm`);
+      } else {
+        setRunOutput(`❌ Unexpected Error: ${String(e)}\n\nPlease check:\n1. Code syntax is correct\n2. Backend server is running\n3. Browser console for more details`);
+      }
     } finally {
       setIsRunning(false);
+      setWaitingForInput(false);
       abortRef.current = null;
     }
   };
 
+  // Handle user input submission
+  const handleInputSubmit = async () => {
+    if (!userInput.trim()) return;
+    
+    const currentProb = problems[currentProblem];
+    const code = solutions[currentProb?.id] || '';
+    
+    // Add user input to console output
+    setRunOutput(prev => prev + `\n> ${userInput}\n\nExecuting with your input...\n`);
+    
+    // Execute code with user input
+    await executeCode(code, userInput);
+    
+    // Reset input states
+    setUserInput('');
+    setWaitingForInput(false);
+    setInputPrompt('');
+  };
+
+  // Handle Enter key press in input
+  const handleInputKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleInputSubmit();
+    }
+  };
+
   const handleRunTests = async () => {
-    const ex = Array.isArray(currentProb?.examples) ? currentProb.examples : [];
+    console.log('handleRunTests called');
+    const currentProb = problems[currentProblem];
+    console.log('=== CURRENT PROBLEM DEBUG ===');
+    console.log('Current problem:', currentProb);
+    console.log('Problem keys:', currentProb ? Object.keys(currentProb) : 'No problem');
+    console.log('testCases field:', currentProb?.testCases);
+    console.log('examples field:', currentProb?.examples);
+    console.log('testCases is array:', Array.isArray(currentProb?.testCases));
+    console.log('examples is array:', Array.isArray(currentProb?.examples));
+    
+    // Get test cases from backend response
+    let ex = [];
+    
+    // Backend sends testCases array with TestCaseDTO objects
+    if (Array.isArray(currentProb?.testCases)) {
+      console.log('Using testCases field');
+      ex = currentProb.testCases.map(testCase => ({
+        input: testCase.input,
+        output: testCase.expectedOutput
+      }));
+    } 
+    // Fallback to examples field if available
+    else if (Array.isArray(currentProb?.examples)) {
+      console.log('Using examples field');
+      ex = currentProb.examples;
+    }
+    
+    console.log('Test cases found:', ex.length);
+    console.log('Test cases:', ex);
+    
     if (ex.length === 0) {
-      setTestResults({ supported: true, total: 0, passed: 0, cases: [] });
+      console.log('No test cases found');
+      setTestResults({ 
+        supported: true, 
+        total: 0, 
+        passed: 0, 
+        cases: [],
+        error: 'No test cases available. The problem may not have test cases configured.'
+      });
+      setIsRunning(false);
       return;
     }
+    
     const code = solutions[currentProb?.id] || '';
+    console.log('Code for testing:', code.substring(0, 100) + '...');
+    console.log('Language:', language);
+    
     setIsRunning(true);
+    setTestResults({ supported: true, total: ex.length, passed: 0, cases: [] });
+    
     try {
-      if (language === 'javascript') {
-        const cases = ex.map((e, idx) => {
-          let input = e.input;
-          try { input = JSON.parse(e.input); } catch {/* keep raw */}
-          const { result, error } = runUserCode(code, input);
-          const expectedRaw = e.output;
-          let pass = false;
-          try {
-            const expected = JSON.parse(expectedRaw);
-            pass = JSON.stringify(result) === JSON.stringify(expected);
-          } catch {
-            pass = String(result) === String(expectedRaw);
-          }
-          return { idx: idx + 1, pass, got: result, expected: expectedRaw, error };
-        });
-        const passed = cases.filter(c => c.pass && !c.error).length;
-        setTestResults({ supported: true, total: cases.length, passed, cases });
-        return;
-      }
-
-      // Non-JS: call backend judge for each example with timeout
+      // Server-side execution for all languages
       const cases = [];
       const controller = new AbortController();
       abortRef.current = controller;
+      
       for (let i = 0; i < ex.length; i++) {
+        console.log(`Running test case ${i + 1}/${ex.length}`);
         const e = ex[i];
-        let input = e.input;
-        try { input = JSON.parse(e.input); } catch {/* keep raw */}
-        const { output, error } = await judgeRun({ language, code, input, timeoutMs: 20000, signal: controller.signal });
-        const expectedRaw = e.output;
+        let input = e.input || '';
+        
+        console.log(`Test ${i + 1} input:`, input);
+        console.log(`Test ${i + 1} expected output:`, e.output);
+        
+        // Convert input if needed - handle JSON objects properly
+        let processedInput = input;
+        try { 
+          if (input.startsWith('{') || input.startsWith('[')) {
+            // For JSON input, pass it as a string to the backend
+            processedInput = input;
+          }
+        } catch {
+          // Keep as string
+        }
+        
+        console.log(`Test ${i + 1} processed input:`, processedInput);
+        
+        const { output, error } = await judgeRun({ 
+          language, 
+          code, 
+          input: String(processedInput), 
+          timeoutMs: 20000, 
+          signal: controller.signal 
+        });
+        
+        console.log(`Test ${i + 1} execution result:`, { output, error });
+        
+        const expectedRaw = e.output || '';
         let pass = false;
-        if (!error) {
+        
+        if (!error && output) {
+          // Compare outputs - handle JSON arrays and objects
+          const actualOutput = String(output).trim();
+          const expectedOutput = String(expectedRaw).trim();
+          
+          // Try JSON comparison first for structured data
           try {
-            const expected = JSON.parse(expectedRaw);
-            pass = JSON.stringify(output) === JSON.stringify(expected);
+            if ((expectedOutput.startsWith('[') || expectedOutput.startsWith('{')) &&
+                (actualOutput.startsWith('[') || actualOutput.startsWith('{'))) {
+              const expectedJson = JSON.parse(expectedOutput);
+              const actualJson = JSON.parse(actualOutput);
+              pass = JSON.stringify(expectedJson) === JSON.stringify(actualJson);
+            } else {
+              pass = actualOutput === expectedOutput;
+            }
           } catch {
-            pass = String(output) === String(expectedRaw);
+            // Fallback to string comparison
+            pass = actualOutput === expectedOutput;
           }
         }
-        cases.push({ idx: i + 1, pass, got: output, expected: expectedRaw, error });
+        
+        cases.push({ 
+          idx: i + 1, 
+          pass: pass && !error, 
+          got: error ? `Error: ${error}` : output, 
+          expected: expectedRaw, 
+          error: error || null 
+        });
+        
         if (error === 'Request was canceled') {
           break;
         }
       }
+      
       const passed = cases.filter(c => c.pass && !c.error).length;
       setTestResults({ supported: true, total: cases.length, passed, cases });
+      
     } catch (e) {
-      setTestResults({ supported: true, total: 0, passed: 0, cases: [], error: String(e) });
+      setTestResults({ 
+        supported: true, 
+        total: ex.length, 
+        passed: 0, 
+        cases: [{ 
+          idx: 1, 
+          pass: false, 
+          got: 'Connection Error', 
+          expected: 'Server Response', 
+          error: `Cannot connect to server: ${String(e)}` 
+        }] 
+      });
     } finally {
       setIsRunning(false);
       abortRef.current = null;
@@ -258,122 +619,73 @@ const handleCancel = () => {
   useEffect(() => {
     // Timer countdown (only if enabled)
     if (!timerEnabled) return;
-    if (timeLeft > 0 && !isSubmitted) {
+    if (timeLeft > 0) {
       const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
       return () => clearTimeout(timer);
-    } else if (timeLeft === 0 && !isSubmitted) {
+    } else if (timeLeft === 0) {
       handleSubmit();
     }
-  }, [timeLeft, isSubmitted, timerEnabled]);
+  }, [timeLeft, timerEnabled]);
 
   // Persist timer each tick
   useEffect(() => {
     sessionStorage.setItem('coding_timeLeft', String(timeLeft));
   }, [timeLeft]);
 
-  // Sync theme globally like MCQs
+  // Load problems effect - runs once on mount or when navState/props change
   useEffect(() => {
-    const body = document.body;
-    const htmlEl = document.documentElement;
-    const rootEl = document.getElementById('root');
-    [htmlEl, body, rootEl].forEach((el) => {
-      if (!el) return;
-      el.classList.remove('theme-dark', 'theme-light');
-      el.classList.add(`theme-${theme}`);
-    });
-  }, [theme]);
-
-  const loadProblems = async () => {
-    setLoading(true);
-    try {
-      // If navigation already provided problems, skip fetch
-      if (Array.isArray(navState.problems) && navState.problems.length > 0) {
-        setLoading(false);
-        return;
+    // Check if this is a resumed session
+    if (navState.resumeSession && navState.sessionData) {
+      console.log('🔄 Resuming Coding session:', navState);
+      
+      // Restore session data
+      const sessionData = navState.sessionData || {};
+      const answersData = navState.answersData || {};
+      
+      // Restore problems from session
+      if (sessionData.problems && Array.isArray(sessionData.problems)) {
+        setProblems(sessionData.problems);
       }
-      // Try API first (AI-generated coding question), fallback to mock
-      const token = localStorage.getItem('token');
-      let finalProblems = [];
-      try {
-        // Defaults; could be enhanced to take from UI/query later
-        const tech = 'JavaScript';
-        const difficulty = 'Medium';
-        const resp = await axios.post(
-          '/api/candidate/practice/coding',
-          { tech, difficulty },
-          { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-        );
-        const q = resp?.data;
-        if (q && q.title) {
-          const mapped = {
-            id: Date.now(),
-            title: q.title,
-            difficulty: q.difficulty || difficulty,
-            description: q.description || '',
-            examples: Array.isArray(q.examples) ? q.examples : [],
-            constraints: Array.isArray(q.constraints) ? q.constraints : [],
-            starterCode: { [language]: q.starter || '' },
-            technology: q.technology || tech,
-          };
-          finalProblems = [mapped];
-        }
-      } catch (e) {
-        // API failed; do not use mock data, show empty state instead
+      
+      // Restore current problem position
+      if (typeof navState.currentQuestion === 'number') {
+        setCurrentProblem(navState.currentQuestion);
       }
-
-      setProblems(finalProblems);
-
-      // Initialize solutions with starter code (fallback to Hello World if missing)
-      const storageKey = `coding_solutions_${language}`;
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        // Use saved but ensure empty/missing entries get Hello World fallback
-        const savedObj = JSON.parse(saved);
-        const filled = { ...savedObj };
-        (finalProblems || []).forEach((problem) => {
-          const cur = savedObj[problem.id];
-          if (!cur || String(cur).trim().length === 0) {
-            let starter = '';
-            if (language === 'python') {
-              starter = `# Hello World (Python)\nprint(\"Hello, World!\")\n`;
-            } else if (language === 'java') {
-              starter = `// Hello World (Java)\npublic class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello, World!\");\n  }\n}\n`;
-            } else if (language === 'cpp') {
-              starter = `// Hello World (C++)\n#include <bits/stdc++.h>\nusing namespace std;\nint main(){\n  cout << \"Hello, World!\";\n  return 0;\n}\n`;
-            } else if (language === 'c') {
-              starter = `// Hello World (C)\n#include <stdio.h>\nint main(){\n  printf(\"Hello, World!\");\n  return 0;\n}\n`;
-            }
-            filled[problem.id] = starter;
-          }
-        });
-        setSolutions(filled);
-        localStorage.setItem(storageKey, JSON.stringify(filled));
-      } else {
-        const initialSolutions = {};
-        (finalProblems || []).forEach((problem) => {
-          let starter = problem?.starterCode?.[language] ?? '';
-          if (!starter) {
-            if (language === 'python') {
-              starter = `# Hello World (Python)\nprint(\"Hello, World!\")\n`;
-            } else if (language === 'java') {
-              starter = `// Hello World (Java)\npublic class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello, World!\");\n  }\n}\n`;
-            } else if (language === 'cpp') {
-              starter = `// Hello World (C++)\n#include <bits/stdc++.h>\nusing namespace std;\nint main(){\n  cout << \"Hello, World!\";\n  return 0;\n}\n`;
-            } else if (language === 'c') {
-              starter = `// Hello World (C)\n#include <stdio.h>\nint main(){\n  printf(\"Hello, World!\");\n  return 0;\n}\n`;
-            }
-          }
-          initialSolutions[problem.id] = starter;
-        });
-        setSolutions(initialSolutions);
-        localStorage.setItem(storageKey, JSON.stringify(initialSolutions));
+      
+      // Restore solutions
+      if (answersData && typeof answersData === 'object') {
+        setSolutions(answersData);
       }
-    } catch (error) {
-      console.error('Failed to load problems:', error);
-      setProblems([]);
+      
+      // Restore timer
+      if (typeof navState.timeRemaining === 'number') {
+        setTimeLeft(navState.timeRemaining);
+        setTimerEnabled(true);
+      }
+      
+      setLoading(false);
+      return; // Skip normal problem loading
     }
-    setLoading(false);
-  };
+    
+    // Initialize timer settings from navigation
+    if (typeof navState.timerEnabled === 'boolean') setTimerEnabled(navState.timerEnabled);
+    
+    // If problems are provided via props (for mixed component), use them
+    if (_propProblems && _propProblems.length > 0) {
+      setProblems(_propProblems);
+      setLoading(false);
+      initializeSolutions(_propProblems);
+    }
+    // If problems are provided via navigation state, use them; otherwise load from AI API
+    else if (Array.isArray(navState.problems) && navState.problems.length > 0) {
+      const provided = navState.problems;
+      setProblems(provided);
+      initializeSolutions(provided);
+    } else {
+      // Load coding problems from AI API
+      loadProblems();
+    }
+  }, [_propProblems, _propTimeLimit, navState, initializeSolutions, loadProblems]);
 
   const handleCodeChange = (problemId, code) => {
     const updated = {
@@ -390,177 +702,25 @@ const handleCancel = () => {
     // Try to load saved solutions for the chosen language, else starter code
     const storageKey = `coding_solutions_${newLanguage}`;
     const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      // Ensure Hello World fallback for empty/missing entries
-      const savedObj = JSON.parse(saved);
-      const updatedSolutions = { ...savedObj };
-      problems.forEach((problem) => {
-        const cur = savedObj[problem.id];
-        if (!cur || String(cur).trim().length === 0) {
-          let starter = '';
-          if (newLanguage === 'python') {
-            starter = `# Hello World (Python)\nprint(\"Hello, World!\")\n`;
-          } else if (newLanguage === 'java') {
-            starter = `// Hello World (Java)\npublic class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello, World!\");\n  }\n}\n`;
-          } else if (newLanguage === 'cpp') {
-            starter = `// Hello World (C++)\n#include <bits/stdc++.h>\nusing namespace std;\nint main(){\n  cout << \"Hello, World!\";\n  return 0;\n}\n`;
-          } else if (newLanguage === 'c') {
-            starter = `// Hello World (C)\n#include <stdio.h>\nint main(){\n  printf(\"Hello, World!\");\n  return 0;\n}\n`;
-          }
-          updatedSolutions[problem.id] = starter;
-        }
-      });
-      setSolutions(updatedSolutions);
-      localStorage.setItem(storageKey, JSON.stringify(updatedSolutions));
-      return;
-    }
-    const updatedSolutions = {};
+    
+    const updatedSolutions = saved ? JSON.parse(saved) : {};
+    
     problems.forEach((problem) => {
-      let starter = problem?.starterCode?.[newLanguage] ?? '';
-      if (!starter) {
-        if (newLanguage === 'python') {
-          starter = `# Hello World (Python)\nprint(\"Hello, World!\")\n`;
-        } else if (newLanguage === 'java') {
-          starter = `// Hello World (Java)\npublic class Main {\n  public static void main(String[] args) {\n    System.out.println(\"Hello, World!\");\n  }\n}\n`;
-        } else if (newLanguage === 'cpp') {
-          starter = `// Hello World (C++)\n#include <bits/stdc++.h>\nusing namespace std;\nint main(){\n  cout << \"Hello, World!\";\n  return 0;\n}\n`;
-        } else if (newLanguage === 'c') {
-          starter = `// Hello World (C)\n#include <stdio.h>\nint main(){\n  printf(\"Hello, World!\");\n  return 0;\n}\n`;
-        }
+      const cur = updatedSolutions[problem.id];
+      if (!cur || String(cur).trim().length === 0) {
+        // Priority: 1. Backend starter code, 2. Default template
+        updatedSolutions[problem.id] = problem?.starterCode?.[newLanguage] || getStarterCode(newLanguage);
       }
-      updatedSolutions[problem.id] = starter;
     });
+    
     setSolutions(updatedSolutions);
     localStorage.setItem(storageKey, JSON.stringify(updatedSolutions));
-  };
-
-  const handleNext = () => {
-    if (currentProblem < problems.length - 1) {
-      setCurrentProblem(currentProblem + 1);
-    }
   };
 
   const handlePrevious = () => {
     if (currentProblem > 0) {
       setCurrentProblem(currentProblem - 1);
     }
-  };
-
-  const enterFullscreen = () => {
-    // Hide dashboard layout and show only test content
-    const dashboardLayout = document.querySelector('.dashboard-layout');
-    const sidebar = document.querySelector('.sidebar');
-    const header = document.querySelector('.dashboard-header');
-    if (dashboardLayout) dashboardLayout.style.display = 'none';
-    if (sidebar) sidebar.style.display = 'none';
-    if (header) header.style.display = 'none';
-
-    // Make test container full screen
-    const testContainer = document.querySelector('.mcq-test-fullscreen');
-    if (testContainer) {
-      testContainer.style.position = 'fixed';
-      testContainer.style.top = '0';
-      testContainer.style.left = '0';
-      testContainer.style.width = '100vw';
-      testContainer.style.height = '100vh';
-      testContainer.style.zIndex = '9999';
-      testContainer.style.background = '';
-    }
-
-    // Skip calling browser fullscreen API automatically to avoid user-gesture errors
-  };
-
-  const exitFullscreen = () => {
-    // Restore dashboard layout
-    const dashboardLayout = document.querySelector('.dashboard-layout');
-    const sidebar = document.querySelector('.sidebar');
-    const header = document.querySelector('.dashboard-header');
-    if (dashboardLayout) dashboardLayout.style.display = '';
-    if (sidebar) sidebar.style.display = '';
-    if (header) header.style.display = '';
-
-    // Reset test container styles
-    const testContainer = document.querySelector('.mcq-test-fullscreen');
-    if (testContainer) {
-      testContainer.style.position = '';
-      testContainer.style.top = '';
-      testContainer.style.left = '';
-      testContainer.style.width = '';
-      testContainer.style.height = '';
-      testContainer.style.zIndex = '';
-      testContainer.style.background = '';
-    }
-
-    // Exit browser fullscreen
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
-    }
-  };
-
-  const disableSecurityFeatures = () => {
-    // Disable right-click
-    document.addEventListener('contextmenu', preventAction);
-
-    // Disable keyboard shortcuts
-    document.addEventListener('keydown', handleKeyDown);
-
-    // Disable copy/paste
-    document.addEventListener('copy', preventAction);
-    document.addEventListener('paste', preventAction);
-    document.addEventListener('cut', preventAction);
-
-    // Disable text selection
-    document.body.style.userSelect = 'none';
-    document.body.style.webkitUserSelect = 'none';
-  };
-
-  const enableSecurityFeatures = () => {
-    document.removeEventListener('contextmenu', preventAction);
-    document.removeEventListener('keydown', handleKeyDown);
-    document.removeEventListener('copy', preventAction);
-    document.removeEventListener('paste', preventAction);
-    document.removeEventListener('cut', preventAction);
-
-    document.body.style.userSelect = 'auto';
-    document.body.style.webkitUserSelect = 'auto';
-  };
-
-  const preventAction = (e) => {
-    e.preventDefault();
-    return false;
-  };
-
-  const handleKeyDown = (e) => {
-    // Disable F12, Ctrl+Shift+I, Ctrl+U, etc.
-    if (
-      e.key === 'F12' ||
-      (e.ctrlKey && e.shiftKey && e.key === 'I') ||
-      (e.ctrlKey && e.key === 'u') ||
-      (e.ctrlKey && e.key === 'U') ||
-      e.key === 'Escape' ||
-      (e.ctrlKey && e.key === 's') ||
-      (e.ctrlKey && e.key === 'S')
-    ) {
-      e.preventDefault();
-      return false;
-    }
-  };
-
-  const startExam = async () => {
-    setShowTerms(false);
-    setExamStarted(true);
-  };
-
-  const getProblemStatus = () => {
-    return problems.map((_, index) => ({
-      problemNumber: index + 1,
-      attempted: solutions[problems[index]?.id] && solutions[problems[index]?.id].trim().length > 0,
-      current: index === currentProblem,
-    }));
   };
 
   const handleSubmit = async () => {
@@ -571,8 +731,6 @@ const handleCancel = () => {
         (s) => typeof s === 'string' && s.trim().length > 0
       ).length;
       const newScore = answered;
-      setScore(newScore);
-      setIsSubmitted(true);
 
       // Persist session to backend history
       try {
@@ -606,33 +764,186 @@ const handleCancel = () => {
       } catch (err) {
         console.error('Failed to save coding session:', err);
       }
+
+      // In mixed mode, return result to parent instead of navigating away.
+      if (mixedMode && typeof onExamComplete === 'function') {
+        const activeProblem = problems[currentProblem] || problems[0] || null;
+        const activeSolution = activeProblem ? (solutions[activeProblem.id] || '') : '';
+        const passedTests = Number(testResults?.passedTests || testResults?.passed || 0);
+        const totalTests = Number(testResults?.totalTests || testResults?.total || 0);
+        const computedScore = totalTests > 0
+          ? Math.round((passedTests * 100) / totalTests)
+          : 0;
+
+        onExamComplete({
+          problemId: activeProblem?.id,
+          solution: activeSolution,
+          language,
+          score: computedScore,
+          passedTests,
+          totalTests,
+          timeSpent: timerEnabled ? Math.max(0, (Number(_propTimeLimit || 0) * 60) - timeLeft) : 0,
+        });
+        setLoading(false);
+        return;
+      }
     } catch (error) {
       console.error('Failed to submit test:', error);
     }
     setLoading(false);
-
-    // Show success popup
-    setShowSuccessPopup(true);
-
-    // Auto-close popup, exit fullscreen and redirect after 2 seconds
-    setTimeout(() => {
-      setShowSuccessPopup(false);
-      exitFullscreen();
-      setExamStarted(false);
-      navigate('/candidate/partices');
-    }, 2000);
+    navigate('/candidate/partices');
   };
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  // Simple markdown parser for problem descriptions
+  const parseMarkdown = (text) => {
+    if (!text) return [];
+    
+    const lines = text.split('\n');
+    const elements = [];
+    let currentCodeBlock = null;
+    let currentList = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Handle code blocks
+      if (line.trim().startsWith('```')) {
+        if (currentCodeBlock !== null) {
+          // End code block
+          elements.push({
+            type: 'code',
+            content: currentCodeBlock,
+            key: `code-${i}`
+          });
+          currentCodeBlock = null;
+        } else {
+          // Start code block
+          currentCodeBlock = '';
+        }
+        continue;
+      }
+      
+      if (currentCodeBlock !== null) {
+        currentCodeBlock += line + '\n';
+        continue;
+      }
+      
+      // Handle headers
+      if (line.startsWith('# ')) {
+        elements.push({
+          type: 'h1',
+          content: line.substring(2),
+          key: `h1-${i}`
+        });
+      } else if (line.startsWith('## ')) {
+        elements.push({
+          type: 'h2',
+          content: line.substring(3),
+          key: `h2-${i}`
+        });
+      } else if (line.startsWith('### ')) {
+        elements.push({
+          type: 'h3',
+          content: line.substring(4),
+          key: `h3-${i}`
+        });
+      }
+      // Handle bold text with **
+      else if (line.includes('**')) {
+        const parts = line.split('**');
+        const content = parts.map((part, index) => {
+          if (index % 2 === 1) {
+            return <strong key={`bold-${i}-${index}`}>{part}</strong>;
+          }
+          return part;
+        });
+        elements.push({
+          type: 'p',
+          content: content,
+          key: `p-${i}`
+        });
+      }
+      // Handle list items
+      else if (line.trim().startsWith('- ')) {
+        const listItem = line.trim().substring(2);
+        if (!currentList) {
+          currentList = [];
+        }
+        currentList.push(listItem);
+      }
+      // Handle empty lines
+      else if (line.trim() === '') {
+        if (currentList) {
+          elements.push({
+            type: 'ul',
+            content: currentList,
+            key: `ul-${i}`
+          });
+          currentList = null;
+        }
+        elements.push({
+          type: 'br',
+          content: '',
+          key: `br-${i}`
+        });
+      }
+      // Handle regular paragraphs
+      else if (line.trim() !== '') {
+        elements.push({
+          type: 'p',
+          content: line,
+          key: `p-${i}`
+        });
+      }
+    }
+    
+    // Handle any remaining list
+    if (currentList) {
+      elements.push({
+        type: 'ul',
+        content: currentList,
+        key: `ul-final`
+      });
+    }
+    
+    // Handle any remaining code block
+    if (currentCodeBlock !== null) {
+      elements.push({
+        type: 'code',
+        content: currentCodeBlock,
+        key: `code-final`
+      });
+    }
+    
+    return elements;
   };
 
-  const getRating = (percentage) => {
-    if (percentage >= 70) return 'Good';
-    if (percentage >= 40) return 'Average';
-    return 'Poor';
+  // Render parsed markdown elements
+  const renderMarkdownElement = (element) => {
+    switch (element.type) {
+      case 'h1':
+        return <h1 key={element.key} className="markdown-h1">{element.content}</h1>;
+      case 'h2':
+        return <h2 key={element.key} className="markdown-h2">{element.content}</h2>;
+      case 'h3':
+        return <h3 key={element.key} className="markdown-h3">{element.content}</h3>;
+      case 'p':
+        return <p key={element.key} className="markdown-p">{element.content}</p>;
+      case 'code':
+        return <pre key={element.key} className="markdown-code"><code>{element.content}</code></pre>;
+      case 'ul':
+        return (
+          <ul key={element.key} className="markdown-ul">
+            {element.content.map((item, index) => (
+              <li key={`${element.key}-${index}`}>{item}</li>
+            ))}
+          </ul>
+        );
+      case 'br':
+        return <br key={element.key} />;
+      default:
+        return null;
+    }
   };
 
   const getDifficultyColor = (difficulty) => {
@@ -676,174 +987,39 @@ const handleCancel = () => {
   }
 
   return (
-    <div className={`coding-container ${examStarted ? 'exam-mode mcq-test-fullscreen' : ''}`}>
-      {/* Terms modal removed; coding test starts immediately */}
-
-      {/* Success Toast (non-blocking) */}
-      {showSuccessPopup && (
-        <div
-          style={{
-            position: 'fixed',
-            left: '50%',
-            bottom: 20,
-            transform: 'translateX(-50%)',
-            zIndex: 10000,
-            pointerEvents: 'none',
-          }}
-        >
-          <div
-            style={{
-              background: '#111827',
-              padding: '12px 16px',
-              borderRadius: 10,
-              color: '#e5e7eb',
-              minWidth: 280,
-              maxWidth: 420,
-              boxShadow: '0 10px 24px rgba(0,0,0,0.35)',
-              border: '1px solid #1f2937',
-              textAlign: 'center',
-              pointerEvents: 'auto',
-            }}
-          >
-            <div style={{ fontSize: 18, marginBottom: 4 }}>🎉 Submitted successfully</div>
-            <div style={{ fontSize: 12, color: '#9ca3af' }}>Redirecting to Practice…</div>
-            <div style={{ color: '#10b981', marginTop: 6, fontWeight: 700 }}>
-              Score: {score}/{problems.length}
-            </div>
-            <div style={{ color: '#93c5fd', marginTop: 2, fontWeight: 700 }}>
-              Rating: {getRating(problems.length ? Math.round((score / problems.length) * 100) : 0)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Custom Test Header - Only show during exam */}
-      {examStarted && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            background: '#111827',
-            borderBottom: '1px solid #1f2937',
-            color: '#e5e7eb',
-            padding: '12px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            zIndex: 4000,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src={logo} alt="Logo" style={{ width: 22, height: 22, objectFit: 'contain' }} />
-            <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Coding Practice Test</h1>
-            <span style={{ marginLeft: 8, padding: '2px 6px', borderRadius: 6, background: '#0f172a', border: '1px solid #1f2937', color: '#93c5fd', fontSize: 11, fontWeight: 700 }}>Secure</span>
-          </div>
-          {timerEnabled ? (
-            <div style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
-              ⏱️ {formatTime(timeLeft)}
-            </div>
-          ) : (
-            <div style={{ color: '#9ca3af', fontWeight: 600 }}>No time limit</div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} />
-        </div>
-      )}
-
-      {/* MCQ-style Question Status: toggle handle, overlay, sidebar */}
-      {examStarted && (
-        <>
-          <div
-            className={`qs-toggle ${showQuestionStatus ? 'open' : ''}`}
-            onClick={() => setShowQuestionStatus(!showQuestionStatus)}
-            title="Question Status"
-          >
-            <span style={{ fontSize: '18px' }}>{showQuestionStatus ? '❯' : '❮'}</span>
-          </div>
-          <div
-            className={`qs-overlay ${showQuestionStatus ? 'open' : ''}`}
-            onClick={() => setShowQuestionStatus(false)}
-          />
-          <div className={`qs-sidebar ${showQuestionStatus ? 'open' : ''}`}>
-            <div className="qs-grid">
-              {getProblemStatus().map((status, index) => (
-                <div
-                  key={index}
-                  className="qs-item"
-                  style={{
-                    backgroundColor: status.current
-                      ? '#3b82f6'
-                      : status.attempted
-                      ? '#10b981'
-                      : 'rgba(255,255,255,0.15)'
-                  }}
-                  onClick={() => setCurrentProblem(index)}
-                >
-                  {status.problemNumber}
-                </div>
-              ))}
-            </div>
-            <div className="qs-legend">
-              <div>🔵 Current Problem</div>
-              <div>🟢 Code Written</div>
-              <div>⚪ Not Attempted</div>
-            </div>
-          </div>
-        </>
-      )}
-
+    <div className={`coding-container`}>
       <div
         className="coding-test"
         style={{
-          marginTop: examStarted ? '56px' : '0',
-          padding: examStarted ? '16px' : '20px',
+          padding: '20px',
         }}
       >
-        {/* Header - Only show if not in exam mode */}
-        {!examStarted && (
-          <div className="coding-header">
-            <div className="header-left">
-              <h1 className="header-title">Coding Practice Test</h1>
-              <div className="language-selector">
-                <select
-                  value={language}
-                  onChange={(e) => handleLanguageChange(e.target.value)}
-                  className="language-select"
-                >
-                  <option value="java">Java</option>
-                  <option value="python">Python</option>
-                  <option value="cpp">C++</option>
-                  <option value="c">C</option>
-                </select>
-              </div>
-            </div>
-            <div className="header-timer">⏱️ {formatTime(timeLeft)}</div>
-          </div>
-        )}
-
-        {/* Progress Bar */}
-        <div className="progress-section">
-          <div className="progress-info">
-            <span>Problem {currentProblem + 1} of {problems.length}</span>
-            <span>
-              {Math.round(((currentProblem + 1) / problems.length) * 100)}% Complete
-            </span>
-          </div>
-          <div className="progress-bar">
-            <div
-              className="progress-fill"
-              style={{
-                width: `${((currentProblem + 1) / problems.length) * 100}%`,
-              }}
-            ></div>
-          </div>
-        </div>
-
         {/* Main Content */}
-        <div className="coding-content">
+        <div className="coding-content" style={{ padding: '0 20px 80px 20px' }}>
+          <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', position: 'relative' }}>
+            {mixedMode ? (
+              <button
+                type="button"
+                onClick={() => typeof onExamComplete === 'function' && onExamComplete({ cancelled: true })}
+                style={{
+                  position: 'absolute', left: 0, display: 'flex', alignItems: 'center', gap: 8,
+                  color: '#9ca3af', background: 'transparent', border: 'none', fontSize: '14px',
+                  zIndex: 10, cursor: 'pointer'
+                }}
+              >
+                <FiArrowLeft /> <span>Back to Mixed Exam</span>
+              </button>
+            ) : (
+              <Link to="/candidate/partices" style={{ position: 'absolute', left: 0, display: 'flex', alignItems: 'center', gap: 8, color: '#9ca3af', textDecoration: 'none', fontSize: '14px', zIndex: 10 }}>
+                <FiArrowLeft /> <span>Back to Practice</span>
+              </Link>
+            )}
+            <h2 style={{ flex: 1, textAlign: 'center', margin: 0, fontSize: '20px', fontWeight: '700', color: '#f8fafc', letterSpacing: '0.5px' }}>
+              {currentProb?.title || 'Coding Problem'}
+            </h2>
+          </div>
           {problems.length > 0 ? (
-            <div className="problem-layout" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div className="problem-layout" style={{ display: 'grid !important', gridTemplateColumns: '1.4fr 1fr', gap: '20px', alignItems: 'stretch' }}>
               {/* Problem Description */}
               <div className="problem-panel">
                 <div className="problem-header">
@@ -859,50 +1035,67 @@ const handleCancel = () => {
                 </div>
 
                 <div className="problem-description">
-                  <p>{currentProb?.description}</p>
+                  {parseMarkdown(currentProb?.description).map(renderMarkdownElement)}
                 </div>
 
-                {/* Examples */}
-                <div className="problem-section">
-                  <h4>Examples:</h4>
-                  {currentProb?.examples?.map((example, index) => (
-                    <div key={index} className="example-block">
-                      <div>
-                        <strong>Input:</strong> {example.input}
-                      </div>
-                      <div>
-                        <strong>Output:</strong> {example.output}
-                      </div>
-                      {example.explanation && (
-                        <div>
-                          <strong>Explanation:</strong> {example.explanation}
+                {/* Examples - Strictly show only first 2 */}
+                {currentProb?.examples && currentProb.examples.length > 0 && (
+                  <div className="problem-section">
+                    <h4 style={{ marginBottom: '12px' }}>Examples:</h4>
+                    <div style={{ display: 'grid', gap: '16px' }}>
+                      {currentProb.examples.slice(0, 2).map((example, index) => (
+                        <div key={index} className="example-block" style={{ margin: 0 }}>
+                          <div>
+                            <strong>Example {index + 1}:</strong>
+                          </div>
+                          <div style={{ marginTop: '4px' }}>
+                            <strong>Input:</strong> <code>{example.input}</code>
+                          </div>
+                          <div>
+                            <strong>Output:</strong> <code>{example.output}</code>
+                          </div>
+                          {example.explanation && (
+                            <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
+                              <strong>Explanation:</strong> {example.explanation}
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
+                    
+                    {currentProb.examples.length > 2 && (
+                      <div style={{ marginTop: '12px', color: '#64748b', fontSize: '13px', fontStyle: 'italic', textAlign: 'center', borderTop: '1px dashed #334155', paddingTop: '8px' }}>
+                        Run "Run Tests" to verify all {currentProb.examples.length} test cases
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Constraints */}
-                <div className="problem-section">
-                  <h4>Constraints:</h4>
-                  <ul className="constraints-list">
-                    {currentProb?.constraints?.map((constraint, index) => (
-                      <li key={index}>{constraint}</li>
-                    ))}
-                  </ul>
-                </div>
+                {currentProb?.constraints && currentProb.constraints.length > 0 && (
+                  <div className="problem-section">
+                    <h4>Constraints:</h4>
+                    <ul className="constraints-list">
+                      {currentProb.constraints.map((constraint, index) => (
+                        <li key={index}>{constraint}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Code Editor */}
-              <div className="editor-panel">
-                <div className="editor-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>Code Editor</span>
+              <div className="editor-panel" style={{ display: 'block !important', visibility: 'visible !important', minHeight: '600px', border: '2px solid #3b82f6' }}>
+                <div className="editor-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#1e293b' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <FiCode size={18} color="#60a5fa" />
+                    <span style={{ fontWeight: 600 }}>Code Editor</span>
+                    <div style={{ width: '1px', height: '20px', background: '#374151', margin: '0 4px' }}></div>
                     <select
                       value={language}
                       onChange={(e) => handleLanguageChange(e.target.value)}
                       className="language-select"
-                      style={{ padding: '6px 8px', background: '#0f172a', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 6 }}
+                      style={{ padding: '4px 8px', background: '#0f172a', color: '#e5e7eb', border: '1px solid #1f2937', borderRadius: 6, fontSize: '12px' }}
                     >
                       <option value="java">Java</option>
                       <option value="python">Python</option>
@@ -913,26 +1106,116 @@ const handleCancel = () => {
                   <div style={{ display: 'flex', gap: 8 }}>
                     {!isRunning ? (
                       <>
-                        <button onClick={handleRun} className="btn-secondary">Run</button>
-                        <button onClick={handleRunTests} className="btn-primary">Run Tests</button>
+                        <button onClick={handleRun} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <FiTerminal size={14} /> <span>Run</span>
+                        </button>
+                        <button onClick={handleRunTests} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#4f46e5', borderColor: '#6366f1' }}>
+                          <FiCheckCircle size={14} /> <span>Run Tests</span>
+                        </button>
                       </>
                     ) : (
-                      <button onClick={handleCancel} className="btn-secondary">Cancel</button>
+                      <button onClick={handleCancel} className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444' }}>
+                        <FiAlertCircle size={14} /> <span>Cancel</span>
+                      </button>
                     )}
-                    <button onClick={handleSubmit} disabled={loading} className="btn-submit">{loading ? 'Submitting…' : 'Submit Test'}</button>
+                    <button onClick={handleSubmit} disabled={loading} className="btn-submit" style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#10b981', borderColor: '#059669' }}>
+                      <FiPlay size={14} /> <span>{loading ? 'Submitting…' : (mixedMode ? 'Submit Component' : 'Submit Practice')}</span>
+                    </button>
                   </div>
                 </div>
-                <div className="editor-body">
-                  <textarea
-                    className="code-editor"
-                    value={solutions[currentProb?.id] || ''}
-                    onChange={(e) => handleCodeChange(currentProb?.id, e.target.value)}
-                    placeholder={'Write your solution here...'}
-                    spellCheck={false}
-                  />
-                  <div className="editor-output">
-                    <div className="editor-output-title">Console</div>
+                <div className="editor-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: '#111827', padding: '12px', borderRadius: '8px' }}>
+                  <div className="monaco-editor-wrapper" style={{ height: '500px', width: '100%', position: 'relative', background: '#1e1e1e', borderRadius: '8px', overflow: 'hidden', border: '1px solid #334155' }}>
+                    <Editor
+                      height="500px"
+                      language={language === 'cpp' ? 'cpp' : language === 'c' ? 'c' : language}
+                      value={solutions[currentProb?.id] || getStarterCode(language)}
+                      onChange={(val) => handleCodeChange(currentProb?.id, val || '')}
+                      theme="vs-dark"
+                      loading={
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#9ca3af', background: '#1e1e1e' }}>
+                          <div className="loading-spinner" style={{ width: '30px', height: '30px', border: '3px solid #3b82f6', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spinner 0.6s linear infinite', marginBottom: '10px' }}></div>
+                          <span>Loading Editor...</span>
+                        </div>
+                      }
+                      options={{
+                        fontSize: 14,
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        wordWrap: 'on',
+                        automaticLayout: true,
+                        tabSize: 2,
+                        lineNumbers: 'on',
+                        contextmenu: false,
+                        padding: { top: 10, bottom: 10 },
+                        hideCursorInOverviewRuler: true,
+                        overviewRulerBorder: false,
+                      }}
+                    />
+                  </div>
+                  <style>{`
+                    @keyframes spinner {
+                      to { transform: rotate(360deg); }
+                    }
+                  `}</style>
+                  <div className="editor-output" style={{ minHeight: '200px', maxHeight: '300px', overflowY: 'auto', background: '#0f172a', borderRadius: '8px', padding: '16px', border: '1px solid #1f2937' }}>
+                    <div className="editor-output-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <FiTerminal size={14} /> <span>Console Output</span>
+                    </div>
                     <pre className="editor-output-pre">{runOutput || '—'}</pre>
+                    
+                    {/* Interactive Input Field */}
+                    {waitingForInput && (
+                      <div style={{ 
+                        marginTop: '8px', 
+                        padding: '8px', 
+                        background: '#1e293b', 
+                        borderRadius: '4px',
+                        border: '1px solid #334155'
+                      }}>
+                        <div style={{ 
+                          fontSize: '12px', 
+                          color: '#94a3b8', 
+                          marginBottom: '4px' 
+                        }}>
+                          {inputPrompt}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            type="text"
+                            value={userInput}
+                            onChange={(e) => setUserInput(e.target.value)}
+                            onKeyPress={handleInputKeyPress}
+                            placeholder="Type your input and press Enter..."
+                            autoFocus
+                            style={{
+                              flex: 1,
+                              padding: '6px 8px',
+                              background: '#0f172a',
+                              color: '#e5e7eb',
+                              border: '1px solid #1f2937',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              fontFamily: 'monospace'
+                            }}
+                          />
+                          <button
+                            onClick={handleInputSubmit}
+                            disabled={!userInput.trim()}
+                            style={{
+                              padding: '6px 12px',
+                              background: userInput.trim() ? '#3b82f6' : '#374151',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              cursor: userInput.trim() ? 'pointer' : 'not-allowed'
+                            }}
+                          >
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <div className="editor-output-title" style={{ marginTop: 12 }}>Test Results</div>
                     {testResults ? (
                       testResults.supported === false ? (
@@ -941,24 +1224,47 @@ const handleCancel = () => {
                         <div>No structured examples found to run as tests.</div>
                       ) : (
                         <div>
-                          <div style={{ marginBottom: 6 }}>Passed {testResults.passed} / {testResults.total}</div>
-                          <div style={{ display: 'grid', gap: 6 }}>
-                            {testResults.cases.map((c) => (
-                              <div key={c.idx} style={{ background: c.pass && !c.error ? '#052e1a' : '#3f1d1f', border: '1px solid #1f2937', borderRadius: 6, padding: 8 }}>
-                                <div style={{ fontWeight: 600 }}>Case {c.idx}: {c.pass && !c.error ? 'PASS' : 'FAIL'}</div>
-                                {c.error ? <div>Error: {c.error}</div> : (
-                                  <>
-                                    <div>Expected: {c.expected}</div>
-                                    <div>Got: {typeof c.got === 'object' ? JSON.stringify(c.got) : String(c.got)}</div>
-                                  </>
-                                )}
-                              </div>
-                            ))}
+                          <div style={{ marginBottom: 10, fontSize: '16px', fontWeight: 'bold' }}>
+                            <span>Test Results: {testResults.passed} / {testResults.total} Passed</span>
+                          </div>
+                          <div style={{ display: 'grid', gap: 8 }}>
+                            {testResults.cases.map((c, index) => {
+                              const example = currentProb?.examples?.[index];
+                              return (
+                                <div key={c.idx} style={{ 
+                                  background: c.pass && !c.error ? '#052e1a' : '#3f1d1f', 
+                                  border: '1px solid #1f2937', 
+                                  borderRadius: 8, 
+                                  padding: 12 
+                                }}>
+                                  <div style={{ fontWeight: 600, marginBottom: 8, color: c.pass && !c.error ? '#10b981' : '#ef4444', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>Example {c.idx}: {c.pass && !c.error ? '✅ PASS' : '❌ FAIL'}</span>
+                                  </div>
+                                  {example && (
+                                    <div style={{ marginBottom: 8, fontSize: '14px', color: '#9ca3af' }}>
+                                      <div><strong>Input:</strong> <code>{example.input}</code></div>
+                                    </div>
+                                  )}
+                                  {c.error ? (
+                                    <div style={{ color: '#ef4444' }}>Error: {c.error}</div>
+                                  ) : (
+                                    <>
+                                      <div style={{ marginBottom: 4 }}>
+                                        <strong>Expected:</strong> <code>{c.expected}</code>
+                                      </div>
+                                      <div>
+                                        <strong>Got:</strong> <code>{typeof c.got === 'object' ? JSON.stringify(c.got) : String(c.got)}</code>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )
                     ) : (
-                      <div>—</div>
+                      <div>Run your code to see test results</div>
                     )}
                   </div>
                 </div>
@@ -971,8 +1277,8 @@ const handleCancel = () => {
           )}
         </div>
 
-        {/* Navigation (hidden in exam mode; floating buttons are shown there) */}
-        {problems.length > 0 && !examStarted && (
+        {/* Navigation (simplified for practice) */}
+        {problems.length > 0 && (
           <div className="coding-navigation">
             <button
               onClick={handlePrevious}
@@ -993,52 +1299,11 @@ const handleCancel = () => {
               disabled={loading}
               className="btn-submit"
             >
-              {loading ? 'Submitting…' : 'Submit Test'}
+              {loading ? 'Submitting…' : (mixedMode ? 'Submit Component' : 'Submit Practice')}
             </button>
           </div>
         )}
       </div>
-
-      {/* Floating bottom-right navigation (match MCQ) */}
-      {problems.length > 0 && examStarted && (
-        <div
-          style={{
-            position: 'fixed',
-            right: 20,
-            bottom: 20,
-            display: 'flex',
-            gap: 8,
-            zIndex: 2100,
-          }}
-        >
-          <button
-            onClick={handlePrevious}
-            disabled={currentProblem === 0}
-            style={{
-              padding: '8px 12px',
-              borderRadius: 6,
-              background: '#111827',
-              color: '#e5e7eb',
-              border: '1px solid #374151',
-              opacity: currentProblem === 0 ? 0.6 : 1,
-              fontSize: 12,
-            }}
-            title="Previous"
-          >
-            Prev
-          </button>
-          {/* Next button removed to streamline navigation */}
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="btn-submit"
-              style={{ fontSize: 12 }}
-              title="Submit"
-            >
-              {loading ? 'Submitting…' : 'Submit'}
-            </button>
-        </div>
-      )}
     </div>
   );
 }

@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { FiUser, FiMail, FiBriefcase, FiFileText, FiCheckCircle, FiTrendingUp, FiCalendar, FiCode, FiStar, FiAward, FiClock, FiCheck, FiX } from 'react-icons/fi';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 import './DashboardHome.css';
 
 export default function DashboardHome() {
   const [profile, setProfile] = useState(null);
   const [practiceHistory, setPracticeHistory] = useState([]);
   const [resumeScoreHistory, setResumeScoreHistory] = useState([]);
+  const [interviewStatusData, setInterviewStatusData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dailyStreak, setDailyStreak] = useState(0);
@@ -20,42 +22,82 @@ export default function DashboardHome() {
         const token = localStorage.getItem('token');
         
         // Fetch profile data
-        const profileRes = await axios.get('http://localhost:8080/api/candidate/dashboard', {
+        const profileRes = await axios.get(`${API_BASE_URL}/candidate/dashboard`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setProfile(profileRes.data);
         
+        // Set daily streak from real API data
+        setDailyStreak(profileRes.data.dailyStreak || 0);
+
         // Fetch practice history
         try {
-          const practiceRes = await axios.get('http://localhost:8080/api/candidate/practice/history?limit=10', {
+          const practiceRes = await axios.get(`${API_BASE_URL}/candidate/practice/history`, {
             headers: { Authorization: `Bearer ${token}` }
           });
-          setPracticeHistory(practiceRes.data.sessions || []);
-          calculateDailyStreak(practiceRes.data.sessions || []);
+          const sessions = practiceRes.data.sessions || practiceRes.data || [];
+          console.log('Practice API Response:', practiceRes.data);
+          console.log('Practice Sessions:', sessions);
+          setPracticeHistory(sessions);
         } catch (practiceErr) {
-          console.log('Practice history not available, using mock data');
-          setMockPracticeData();
+          console.log('Practice history not available:', practiceErr.message);
+          setPracticeHistory([]);
         }
         
-        // Fetch resume score history
+        // Fetch resume analysis history from ResumeChecker
+        let resumeScores = [];
+        
         try {
-          console.log('Fetching resume score history...');
-          const resumeRes = await axios.get('http://localhost:8080/api/candidate/resume-score-history', {
+          console.log('Fetching resume analysis history...');
+          const resumeRes = await axios.get(`${API_BASE_URL}/candidate/resume-score-history`, {
             headers: { Authorization: `Bearer ${token}` }
           });
-          console.log('Resume API Response:', resumeRes.data);
-          setResumeScoreHistory(resumeRes.data.history || []);
-          console.log('Resume history set to:', resumeRes.data.history || []);
+          console.log('Resume Analysis Response:', resumeRes.data);
+          if (resumeRes.data?.history && Array.isArray(resumeRes.data.history)) {
+            // Map the backend response to chart format
+            resumeScores = resumeRes.data.history.map((item, index) => ({
+              period: item.period || `Analysis ${index + 1}`,
+              score: item.overallScore ?? item.score ?? 0,
+              label: item.createdAt
+                ? new Date(item.createdAt).toLocaleDateString()
+                : (item.label || 'Latest'),
+              date: item.createdAt || null
+            })).sort((a, b) => {
+              if (!a.date || !b.date) return 0;
+              return new Date(a.date) - new Date(b.date);
+            }); // Sort chronologically when date is available
+          }
         } catch (resumeErr) {
-          console.error('Resume score history API error:', resumeErr);
-          console.log('Using mock data for resume score history');
-          // Set mock data if API fails
-          const mockResumeData = [
-            { period: 'Resume 0', score: 45, label: 'Initial' },
-            { period: 'Resume 1', score: profile?.resumeScore || 75, label: 'Latest' }
-          ];
-          setResumeScoreHistory(mockResumeData);
-          console.log('Mock resume data set:', mockResumeData);
+          console.log('Resume analysis history API failed:', resumeErr.message);
+        }
+        
+        setResumeScoreHistory(resumeScores);
+        console.log('Resume history set to:', resumeScores);
+        
+        // Fetch applications/interview status data
+        try {
+          const applicationsRes = await axios.get(`${API_BASE_URL}/candidate/applications`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const applications = applicationsRes.data || [];
+          
+          // Transform applications to interview status format
+          const interviewData = applications.map((app, index) => ({
+            id: app.id || index,
+            company: app.job?.company || 'Unknown Company',
+            position: app.job?.title || 'Unknown Position',
+            stage: getApplicationStage(app.status),
+            date: app.createdAt ? new Date(app.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            status: getStatusDisplay(app.status),
+            statusColor: getStatusColor(app.status)
+          }));
+          
+          setInterviewStatusData(interviewData);
+          console.log('Interview Status Data:', interviewData);
+          console.log('Status values:', interviewData.map(i => i.status));
+        } catch (appErr) {
+          console.log('Applications data not available:', appErr.message);
+          setInterviewStatusData([]);
         }
         
       } catch (err) {
@@ -68,61 +110,111 @@ export default function DashboardHome() {
     fetchDashboardData();
   }, []);
 
+  const calculateSimpleStreak = () => {
+    // This could be based on login days, profile activity, or any other metric
+    // For now, return a random streak between 1-15 or based on profile data
+    const lastLogin = localStorage.getItem('lastLoginDate');
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (lastLogin === today) {
+      // User logged in today, get stored streak or start new one
+      const storedStreak = localStorage.getItem('dailyStreak') || '1';
+      return parseInt(storedStreak);
+    } else {
+      // Reset streak and update login date
+      localStorage.setItem('lastLoginDate', today);
+      localStorage.setItem('dailyStreak', '1');
+      return 1;
+    }
+  };
+
+  // This function is no longer used for daily streak calculation
   const calculateDailyStreak = (sessions) => {
-    if (!sessions || sessions.length === 0) {
-      setDailyStreak(0);
-      return;
-    }
-    
-    const sortedSessions = sessions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    let streak = 0;
-    let currentDate = new Date();
-    currentDate.setHours(0, 0, 0, 0);
-    
-    for (let session of sortedSessions) {
-      const sessionDate = new Date(session.createdAt);
-      sessionDate.setHours(0, 0, 0, 0);
-      const daysDiff = Math.floor((currentDate - sessionDate) / (1000 * 60 * 60 * 24));
-      
-      if (daysDiff === streak) {
-        streak++;
-        currentDate.setDate(currentDate.getDate() - 1);
-      } else {
-        break;
-      }
-    }
-    setDailyStreak(streak);
+    // This function can be removed or repurposed for other streak calculations
+    console.log('Note: Daily streak is now independent of practice sessions');
   };
 
-  const setMockPracticeData = () => {
-    const mockSessions = [
-      { _id: '1', type: 'mcq', percentage: 85, createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) },
-      { _id: '2', type: 'coding', percentage: 78, createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
-      { _id: '3', type: 'mcq', percentage: 92, createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
-      { _id: '4', type: 'coding', percentage: 88, createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) },
-      { _id: '5', type: 'interview', percentage: 75, createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) },
-      { _id: '6', type: 'mcq', percentage: 95, createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000) },
-    ];
-    setPracticeHistory(mockSessions);
-    setDailyStreak(6);
+  // Helper functions to transform application status
+  const getApplicationStage = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'applied': return 'Applied';
+      case 'shortlisted': return 'Resume Shortlisted';
+      case 'interview_scheduled': return 'Interview Scheduled';
+      case 'interview_completed': return 'Interview Completed';
+      case 'technical_round': return 'Technical Round';
+      case 'hr_round': return 'HR Round';
+      case 'final_round': return 'Final Round';
+      case 'selected': return 'Selected';
+      case 'rejected': return 'Rejected';
+      default: return 'Applied';
+    }
   };
 
-  // Prepare chart data (reverse to show chronological order: oldest first)
+  const getStatusDisplay = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'applied': return 'Under Review';
+      case 'shortlisted': return 'Shortlisted';
+      case 'interview_scheduled': return 'Scheduled';
+      case 'interview_completed': return 'Completed';
+      case 'technical_round': return 'In Progress';
+      case 'hr_round': return 'In Progress';
+      case 'final_round': return 'In Progress';
+      case 'selected': return 'Selected';
+      case 'rejected': return 'Rejected';
+      default: return 'Pending';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'applied': return '#3498db';
+      case 'shortlisted': return '#f39c12';
+      case 'interview_scheduled': return '#f39c12';
+      case 'interview_completed': return '#27ae60';
+      case 'technical_round': return '#9b59b6';
+      case 'hr_round': return '#9b59b6';
+      case 'final_round': return '#e74c3c';
+      case 'selected': return '#27ae60';
+      case 'rejected': return '#e74c3c';
+      default: return '#95a5a6';
+    }
+  };
+
+
+  // Prepare chart data (show only last 10 sessions for better visualization)
   const practiceChartData = practiceHistory
     .slice() // Create a copy to avoid mutating original array
-    .reverse() // Reverse to get chronological order (oldest first)
+    .sort((a, b) => 
+      new Date(a.createdAt || a.created_at || a.timestamp) - 
+      new Date(b.createdAt || b.created_at || b.timestamp)
+    ) // Sort chronologically (oldest first)
+    .slice(-10) // Take only the last 10 sessions
     .map((session, index) => ({
-      session: `Practice ${index + 1}`,
-      score: session.percentage,
-      date: new Date(session.createdAt).toLocaleDateString(),
-      type: session.type
+      session: `Practice ${practiceHistory.length - 9 + index}`, // Show actual session numbers
+      score: session.percentage || session.score || 0,
+      date: new Date(session.createdAt || session.created_at || session.timestamp || Date.now()).toLocaleDateString(),
+      type: session.type || 'practice'
     }));
 
-  // Resume score progress (dynamic data from API)
-  const resumeScoreData = resumeScoreHistory.length > 0 ? resumeScoreHistory : [
-    { period: 'Resume 0', score: 45, label: 'Initial' },
-    { period: 'Resume 1', score: profile?.resumeScore || 75, label: 'Latest' }
-  ];
+  // Resume score progress (dynamic data from API, with profile fallback)
+  const resumeScoreData = resumeScoreHistory.length > 0
+    ? resumeScoreHistory
+    : (profile?.resumeScore > 0
+      ? [{
+          period: 'Current Resume',
+          score: profile.resumeScore,
+          label: 'Latest',
+          date: null
+        }]
+      : []);
+
+  const practiceSessionsCompleted = practiceHistory.length > 0
+    ? practiceHistory.length
+    : (profile?.practiceSessionsCompleted || 0);
+
+  const attendedInterviews = (profile?.interviewsAttended && profile.interviewsAttended > 0)
+    ? profile.interviewsAttended
+    : interviewStatusData.filter((item) => item.status === 'Completed' || item.status === 'Selected').length;
   
   // Calculate dynamic resume score summary
   const getResumeScoreSummary = () => {
@@ -139,16 +231,16 @@ export default function DashboardHome() {
       // Only one resume score available
       const currentScore = resumeScoreData[0].score;
       return {
-        before: 45, // Default baseline for first resume
+        before: 0, // No previous data
         current: currentScore,
-        improvement: currentScore - 45
+        improvement: currentScore
       };
     }
-    // Fallback if no data
+    // No resume analysis data available
     return {
-      before: 45,
-      current: profile?.resumeScore || 75,
-      improvement: (profile?.resumeScore || 75) - 45
+      before: 0,
+      current: 0,
+      improvement: 0
     };
   };
   
@@ -160,64 +252,6 @@ export default function DashboardHome() {
   console.log('Resume Score Summary:', resumeScoreSummary);
   console.log('Practice Chart Data:', practiceChartData);
   console.log('Practice History (original):', practiceHistory);
-
-  // Interview status data (mock data for demonstration)
-  const interviewStatusData = [
-    { 
-      id: 1,
-      company: 'TechCorp Solutions', 
-      position: 'Frontend Developer', 
-      stage: 'Applied', 
-      date: '2024-01-15', 
-      status: 'Completed',
-      statusColor: '#27ae60'
-    },
-    { 
-      id: 2,
-      company: 'TechCorp Solutions', 
-      position: 'Frontend Developer', 
-      stage: 'Resume Shortlisted', 
-      date: '2024-01-18', 
-      status: 'Completed',
-      statusColor: '#27ae60'
-    },
-    { 
-      id: 3,
-      company: 'TechCorp Solutions', 
-      position: 'Frontend Developer', 
-      stage: 'Online Assessment', 
-      date: '2024-01-22', 
-      status: 'Completed',
-      statusColor: '#27ae60'
-    },
-    { 
-      id: 4,
-      company: 'TechCorp Solutions', 
-      position: 'Frontend Developer', 
-      stage: 'Technical Interview', 
-      date: '2024-01-25', 
-      status: 'Scheduled',
-      statusColor: '#f39c12'
-    },
-    { 
-      id: 5,
-      company: 'DataFlow Inc', 
-      position: 'Full Stack Developer', 
-      stage: 'Applied', 
-      date: '2024-01-20', 
-      status: 'Under Review',
-      statusColor: '#3498db'
-    },
-    { 
-      id: 6,
-      company: 'InnovateTech', 
-      position: 'React Developer', 
-      stage: 'HR Interview', 
-      date: '2024-01-28', 
-      status: 'Pending',
-      statusColor: '#95a5a6'
-    }
-  ];
 
   if (loading) {
     return (
@@ -314,7 +348,11 @@ export default function DashboardHome() {
             )}
           </div>
           <div style={{ flex: 1, minWidth: '300px' }}>
-            <h1 style={{ margin: '0 0 8px 0', fontSize: '32px', fontWeight: '700', color: '#e2e8f0' }}>{profile.name}</h1>
+            <h1 style={{ margin: '0 0 8px 0', fontSize: '32px', fontWeight: '700', color: '#e2e8f0' }}>
+              {profile.name ? profile.name.split(' ').filter((part, index, arr) => 
+                part && arr.indexOf(part) === index // Remove duplicate words
+              ).join(' ') : 'User'}
+            </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0', fontSize: '16px', color: '#a6b0cf' }}>
               <FiMail size={16} style={{ color: '#667eea' }} /> {profile.email}
             </div>
@@ -391,9 +429,13 @@ export default function DashboardHome() {
           border: '1px solid #2b2f44'
         }}>
           <FiFileText className="stats-icon" size={32} style={{ marginBottom: '12px', color: '#4ecdc4' }} />
-          <div className="stats-value" style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#4ecdc4' }}>{profile.resumeScore || 0}/100</div>
-          <div style={{ fontSize: '16px', color: '#a6b0cf' }}>Resume Score</div>
-          <div style={{ fontSize: '12px', color: '#8b95b7', marginTop: '4px' }}>Last updated</div>
+          <div className="stats-value" style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#4ecdc4' }}>
+            {resumeScoreData.length > 0 ? resumeScoreData[resumeScoreData.length - 1].score : 0}/100
+          </div>
+          <div style={{ fontSize: '16px', color: '#a6b0cf' }}>Resume Analysis Score</div>
+          <div style={{ fontSize: '12px', color: '#8b95b7', marginTop: '4px' }}>
+            {resumeScoreData.length > 0 ? 'Latest analysis' : 'No analysis yet'}
+          </div>
         </div>
 
         {/* Interviews Card */}
@@ -407,7 +449,7 @@ export default function DashboardHome() {
           border: '1px solid #2b2f44'
         }}>
           <FiStar className="stats-icon" size={32} style={{ marginBottom: '12px', color: '#a8edea' }} />
-          <div className="stats-value" style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#a8edea' }}>{profile.interviewsAttended || 0}</div>
+          <div className="stats-value" style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#a8edea' }}>{attendedInterviews}</div>
           <div style={{ fontSize: '16px', color: '#a6b0cf' }}>Interviews</div>
           <div style={{ fontSize: '12px', color: '#8b95b7', marginTop: '4px' }}>Attended</div>
         </div>
@@ -423,7 +465,7 @@ export default function DashboardHome() {
           border: '1px solid #2b2f44'
         }}>
           <FiCode className="stats-icon" size={32} style={{ marginBottom: '12px', color: '#667eea' }} />
-          <div className="stats-value" style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#667eea' }}>{practiceHistory.length}</div>
+          <div className="stats-value" style={{ fontSize: '36px', fontWeight: '700', marginBottom: '8px', color: '#667eea' }}>{practiceSessionsCompleted}</div>
           <div style={{ fontSize: '16px', color: '#a6b0cf' }}>Practice Sessions</div>
           <div style={{ fontSize: '12px', color: '#8b95b7', marginTop: '4px' }}>Completed</div>
         </div>
@@ -698,25 +740,40 @@ export default function DashboardHome() {
         }}>
           <div className="summary-stat" style={{ textAlign: 'center' }}>
             <div className="stat-number" style={{ fontSize: '24px', fontWeight: '700', color: '#27ae60', marginBottom: '4px' }}>
-              {interviewStatusData.filter(i => i.status === 'Completed').length}
+              {interviewStatusData.filter(i => 
+                i.status === 'Completed' || 
+                i.status === 'Selected' || 
+                i.status === 'Interview Completed'
+              ).length}
             </div>
             <div style={{ fontSize: '12px', color: '#a6b0cf', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Completed</div>
           </div>
           <div className="summary-stat" style={{ textAlign: 'center' }}>
             <div className="stat-number" style={{ fontSize: '24px', fontWeight: '700', color: '#f39c12', marginBottom: '4px' }}>
-              {interviewStatusData.filter(i => i.status === 'Scheduled').length}
+              {interviewStatusData.filter(i => 
+                i.status === 'Scheduled' || 
+                i.status === 'Interview Scheduled' ||
+                i.status === 'Shortlisted'
+              ).length}
             </div>
             <div style={{ fontSize: '12px', color: '#a6b0cf', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Scheduled</div>
           </div>
           <div className="summary-stat" style={{ textAlign: 'center' }}>
             <div className="stat-number" style={{ fontSize: '24px', fontWeight: '700', color: '#3498db', marginBottom: '4px' }}>
-              {interviewStatusData.filter(i => i.status === 'Under Review').length}
+              {interviewStatusData.filter(i => 
+                i.status === 'Under Review' || 
+                i.status === 'In Progress' ||
+                i.status === 'Applied'
+              ).length}
             </div>
             <div style={{ fontSize: '12px', color: '#a6b0cf', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Under Review</div>
           </div>
           <div className="summary-stat" style={{ textAlign: 'center' }}>
             <div className="stat-number" style={{ fontSize: '24px', fontWeight: '700', color: '#95a5a6', marginBottom: '4px' }}>
-              {interviewStatusData.filter(i => i.status === 'Pending').length}
+              {interviewStatusData.filter(i => 
+                i.status === 'Pending' || 
+                i.status === 'Rejected'
+              ).length}
             </div>
             <div style={{ fontSize: '12px', color: '#a6b0cf', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Pending</div>
           </div>

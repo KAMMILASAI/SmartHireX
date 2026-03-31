@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './Interview.css';
-import logo from '../assets/logo.png';
+import logo from '../assets/SmarthireX-logo.jpeg';
+import { API_BASE_URL } from '../config';
+import { useToast } from '../contexts/ToastContext';
 
 export default function Interview() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showError, showSuccess } = useToast();
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -20,6 +23,7 @@ export default function Interview() {
   const [showTerms, setShowTerms] = useState(false);
   const [examStarted, setExamStarted] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(5);
   const [webcamStream, setWebcamStream] = useState(null);
   const [webcamPermission, setWebcamPermission] = useState('pending');
   // Typing animations
@@ -125,24 +129,63 @@ export default function Interview() {
     }
   };
 
-  // Load questions (mock or from navigation state) and prepare timers/tts
+  // Load questions from AI API or use fallback
   const loadQuestions = async () => {
     try {
       setLoading(true);
       const state = location.state || {};
-      const incoming = Array.isArray(state.questions) ? state.questions : [];
-      const qs = incoming.length > 0 ? incoming : [
-        { id: 'q1', text: 'Tell me about yourself.', timeLimit: 120 },
-        { id: 'q2', text: 'Describe a challenging project you worked on and your impact.', timeLimit: 120 },
-        { id: 'q3', text: 'What strengths do you bring to a software engineering team?', timeLimit: 120 },
-      ];
+      const interviewParams = state.interview;
+      
+      let qs = [];
+      
+      // Try to generate AI questions if interview parameters are provided
+      if (interviewParams) {
+        try {
+          console.log('Generating AI interview questions with params:', interviewParams);
+          
+          const token = localStorage.getItem('token');
+          const response = await fetch(`${API_BASE_URL}/candidate/practice/ai-interview`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(interviewParams)
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            qs = data.questions || [];
+            console.log('Generated AI questions:', qs);
+          } else {
+            console.error('AI interview API failed:', response.status);
+            throw new Error('AI service unavailable');
+          }
+        } catch (aiError) {
+          console.error('AI interview generation failed:', aiError);
+          showError('AI Interview Service Unavailable', 'Unable to generate interview questions. Please try again later or contact support.');
+          setTimeout(() => navigate('/candidate/partices', { replace: true }), 100);
+          return;
+        }
+      }
+      
+      // If no AI questions and no params, show error
+      if (qs.length === 0) {
+        console.error('No interview questions available');
+        showError('Interview Setup Required', 'Please set up your interview parameters from the practice page.');
+        setTimeout(() => navigate('/candidate/partices', { replace: true }), 100);
+        return;
+      }
+      
       setQuestions(qs);
       setCurrentQuestion(0);
       setQuestionTimeLeft(qs[0]?.timeLimit ?? 120);
-      // Read the first question aloud; recording will auto-start after TTS ends
-      if (qs[0]?.text) speak(qs[0].text);
+      // Don't speak the first question yet - wait for user to start exam
     } catch (err) {
       console.error('Failed to load questions', err);
+      showError('Interview System Error', 'Unable to initialize interview system. Please try again or contact support.');
+      setTimeout(() => navigate('/candidate/partices', { replace: true }), 100);
+      return;
     } finally {
       setLoading(false);
     }
@@ -278,73 +321,117 @@ export default function Interview() {
     try { if (questionTimerRef.current) clearInterval(questionTimerRef.current); } catch {}
   }, []);
 
-  // Speech Recognition
+
+  // Ensure speech recognition is set up
   const ensureRecognition = () => {
-    if (recognitionRef.current) return recognitionRef.current;
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return null;
-    const rec = new SR();
-    rec.lang = 'en-US';
-    rec.interimResults = true;
-    rec.continuous = true;
-    rec.onresult = (event) => {
-      let interim = '';
-      const finals = [];
+    if (recognitionRef.current) {
+      return recognitionRef.current;
+    }
+
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      console.warn('Speech recognition not supported');
+      return null;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      console.log('Speech recognition started');
+      setIsRecording(true);
+    };
+
+    recognition.onresult = (event) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i];
-        if (res.isFinal) finals.push(res[0].transcript);
-        else interim += res[0].transcript;
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
       }
-      const q = questions[currentQuestion];
-      if (q) {
-        if (finals.length > 0) {
-          const finalText = finals.join(' ').trim();
-          // Append final to answers (persisted) and merge into ONE user bubble per question
-          setAnswers((prev) => ({ ...prev, [q.id]: ((prev[q.id] || '') + (prev[q.id] ? ' ' : '') + finalText).trim() }));
-          setChatHistory((prev) => {
+
+      setLiveTranscript(interimTranscript);
+
+      if (finalTranscript) {
+        const q = questions[currentQuestion];
+        if (q) {
+          setAnswers(prev => ({
+            ...prev,
+            [q.id]: ((prev[q.id] || '') + ' ' + finalTranscript).trim()
+          }));
+
+          setChatHistory(prev => {
             const list = prev[q.id] || [];
             const newList = [...list];
             if (newList.length > 0 && newList[newList.length - 1].role === 'user') {
               const last = { ...newList[newList.length - 1] };
-              last.text = (last.text ? (last.text + ' ') : '') + finalText;
+              last.text = (last.text + ' ' + finalTranscript).trim();
               last.ts = Date.now();
               newList[newList.length - 1] = last;
             } else {
-              newList.push({ role: 'user', text: finalText, ts: Date.now() });
+              newList.push({ role: 'user', text: finalTranscript, ts: Date.now() });
             }
             return { ...prev, [q.id]: newList };
           });
-          setLiveTranscript('');
-        } else {
-          setLiveTranscript(interim);
         }
       }
     };
-    rec.onerror = () => {
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
       setIsRecording(false);
+      if (event.error === 'not-allowed') {
+        showError('Microphone Permission Denied', 'Please allow microphone access to continue with the interview.');
+      }
     };
-    rec.onend = () => {
+
+    recognition.onend = () => {
+      console.log('Speech recognition ended');
       setIsRecording(false);
       setLiveTranscript('');
     };
-    recognitionRef.current = rec;
-    return rec;
+
+    recognitionRef.current = recognition;
+    return recognition;
   };
 
   const startRecognition = () => {
+    console.log('startRecognition called, isSpeaking:', isSpeaking, 'examStarted:', examStarted);
+    
     // Do not allow starting while AI is speaking
     if (isSpeaking) {
+      console.log('Cannot start recognition: AI is speaking');
       return;
     }
+    
+    // Only allow recognition during exam
+    if (!examStarted) {
+      console.log('Cannot start recognition: Exam not started');
+      return;
+    }
+    
     const rec = ensureRecognition();
     if (!rec) {
-      alert('Speech recognition not supported in this browser.');
+      showError('Speech Recognition Not Supported', 'Your browser does not support speech recognition. Please use Chrome or Edge.');
       return;
     }
+    
     try {
+      console.log('Starting speech recognition...');
       rec.start();
       setIsRecording(true);
-    } catch {}
+    } catch (error) {
+      console.error('Error starting speech recognition:', error);
+      showError('Speech Recognition Error', 'Unable to start speech recognition. Please check your microphone permissions.');
+    }
   };
 
   const stopRecognition = () => {
@@ -392,12 +479,19 @@ export default function Interview() {
   };
 
   const exitFullscreen = () => {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
+    try {
+      // Check if document is actually in fullscreen mode before trying to exit
+      if (document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          document.msExitFullscreen();
+        }
+      }
+    } catch (error) {
+      console.warn('Error exiting fullscreen:', error);
     }
     
     // Show dashboard elements
@@ -457,6 +551,22 @@ export default function Interview() {
     }
   };
 
+  // Webcam management
+  const stopWebcam = () => {
+    try {
+      if (webcamStream) {
+        webcamStream.getTracks().forEach(track => {
+          track.stop();
+        });
+        setWebcamStream(null);
+        setWebcamPermission('denied');
+      }
+    } catch (error) {
+      console.error('Error stopping webcam:', error);
+    }
+  };
+
+
   const startExam = async () => {
     setShowTerms(false);
     // First ask mic and webcam permissions with a user gesture
@@ -467,6 +577,8 @@ export default function Interview() {
     setExamStarted(true);
     // Lock page scroll to fixed window size during interview
     try { document.body.style.overflow = 'hidden'; } catch {}
+    
+    // The useEffect will automatically speak the first question when examStarted becomes true
   };
 
   const requestWebcamPermission = async () => {
@@ -566,13 +678,26 @@ export default function Interview() {
       setScore(answered);
       setIsSubmitted(true);
       setShowSuccessPopup(true);
+      
+      // Show success notification
+      showSuccess('Interview Completed!', `Successfully answered ${answered}/${questions.length} questions. Great job!`);
 
       // Gracefully exit fullscreen and stop webcam if active
       try { exitFullscreen(); } catch {}
       try { stopWebcam(); } catch {}
 
-      // Hide success popup after a short delay
-      setTimeout(() => setShowSuccessPopup(false), 2000);
+      // Start countdown timer
+      setRedirectCountdown(5);
+      const countdownInterval = setInterval(() => {
+        setRedirectCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            navigate('/candidate/partices', { replace: true });
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
     } finally {
       setLoading(false);
     }
@@ -660,9 +785,9 @@ export default function Interview() {
           position: 'fixed',
           top: 0,
           left: 0,
-          width: '100vw',
-          height: '100vh',
-          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(0, 0, 0, 0.9)',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
@@ -671,27 +796,105 @@ export default function Interview() {
         }}>
           <div style={{
             backgroundColor: 'white',
-            padding: '40px',
-            borderRadius: '16px',
+            padding: '50px 40px',
+            borderRadius: '20px',
             textAlign: 'center',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
-            animation: 'fadeIn 0.3s ease'
+            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.4)',
+            maxWidth: '500px',
+            width: '90%'
           }}>
-            <div style={{ fontSize: '48px', marginBottom: '20px' }}>🎉</div>
-            <h2 style={{ color: '#059669', marginBottom: '15px' }}>Interview Completed Successfully!</h2>
-            <p style={{ color: '#6b7280', marginBottom: '20px' }}>
-              Your interview responses have been submitted.<br />
-              Exiting full-screen mode...
-            </p>
+            {/* Success Icon */}
             <div style={{
-              width: '40px',
-              height: '40px',
-              border: '3px solid #d1fae5',
-              borderTop: '3px solid #059669',
+              width: '80px',
+              height: '80px',
+              backgroundColor: '#10b981',
               borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto'
-            }}></div>
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 25px auto',
+              fontSize: '40px',
+              color: 'white'
+            }}>
+              ✓
+            </div>
+            
+            {/* Title */}
+            <h2 style={{ 
+              color: '#1f2937', 
+              marginBottom: '15px',
+              fontSize: '24px',
+              fontWeight: '600'
+            }}>
+              Interview Complete!
+            </h2>
+            
+            {/* AI Analysis Results */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '20px',
+              borderRadius: '12px',
+              marginBottom: '25px',
+              border: '1px solid #e2e8f0'
+            }}>
+              <div style={{ color: '#475569', fontSize: '14px', marginBottom: '10px' }}>
+                <strong>AI Analysis Results</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ color: '#64748b' }}>Questions Answered:</span>
+                <span style={{ color: '#059669', fontWeight: '600' }}>{score}/{questions.length}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ color: '#64748b' }}>Completion Rate:</span>
+                <span style={{ color: '#059669', fontWeight: '600' }}>{Math.round((score/questions.length) * 100)}%</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>AI Confidence:</span>
+                <span style={{ color: '#059669', fontWeight: '600' }}>
+                  {score === questions.length ? 'High' : score >= questions.length * 0.7 ? 'Good' : 'Moderate'}
+                </span>
+              </div>
+            </div>
+            
+            {/* Redirect Timer */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '15px',
+              marginBottom: '25px'
+            }}>
+              <div style={{
+                width: '30px',
+                height: '30px',
+                border: '3px solid #e5e7eb',
+                borderTop: '3px solid #059669',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite'
+              }}></div>
+              <span style={{ color: '#6b7280', fontSize: '16px' }}>
+                Redirecting in <strong style={{ color: '#059669' }}>{redirectCountdown}s</strong>
+              </span>
+            </div>
+            
+            {/* Action Button */}
+            <button
+              onClick={() => navigate('/candidate/partices', { replace: true })}
+              style={{
+                background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                color: 'white',
+                border: 'none',
+                padding: '12px 30px',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: '600',
+                boxShadow: '0 4px 12px rgba(5, 150, 105, 0.3)',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Continue to Practice
+            </button>
           </div>
         </div>
       )}

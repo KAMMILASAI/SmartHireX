@@ -1,106 +1,95 @@
 import DashboardLayout from '../components/DashboardLayout';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { FiHome, FiUsers, FiMessageCircle, FiInbox, FiCreditCard, FiBell } from 'react-icons/fi';
+import { FiHome, FiUsers, FiMessageCircle, FiInbox, FiCreditCard } from 'react-icons/fi';
 import Payments from './Payments';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-// Removed separate Candidates/Recruiters pages in favor of unified Users page
+import { API_BASE_URL } from '../config';
 import Users from './Users';
 import Chat from './Chat';
 import SendNotification from './SendNotification';
-import Requests from './Requests';
 import AdminDashboardHome from './DashboardHome';
+import AdminEditProfile from './EditProfile';
 
 export default function AdminDashboard() {
-  const [requestsCount, setRequestsCount] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Fetch pending requests count
   useEffect(() => {
-    const fetchRequestsCount = async () => {
+    const fetchData = async () => {
       try {
         const token = localStorage.getItem('token');
-        const res = await axios.get('http://localhost:8080/api/admin/pending-recruiters', {
-          headers: { Authorization: `Bearer ${token}` }
+        
+        // Fetch total payments
+        const paymentsRes = await axios.get(`${API_BASE_URL}/admin/payments/total`, {
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'Access-Control-Allow-Origin': 'http://localhost:5173'
+          },
+          withCredentials: true
         });
-        setRequestsCount(res.data.count || 0);
-      } catch (err) {
-        console.error('Failed to fetch requests count:', err);
-        setRequestsCount(0);
-      }
-      setLoading(false);
-    };
-
-    fetchRequestsCount();
-
-    const fetchTotal = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const res = await axios.get('http://localhost:8080/api/admin/payments/total', {
-          headers: { Authorization: `Bearer ${token}` }
+        setTotalAmount(paymentsRes.data.total || 0);
+        
+        // Fetch unread chat messages
+        const chatRes = await axios.get(`${API_BASE_URL}/chat/unread-count`, {
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'Access-Control-Allow-Origin': 'http://localhost:5173'
+          },
+          withCredentials: true
         });
-        setTotalAmount(res.data.total || 0);
-      } catch (e) {
+        const totalUnread = Number(chatRes.data?.totalUnreadCount) || 0;
+        setUnreadCount(totalUnread);
+        
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
         setTotalAmount(0);
-      }
-    };
-
-    const fetchUnreadCount = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const res = await axios.get('/api/chat/chats', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const list = Array.isArray(res.data) ? res.data : [];
-        const total = list.reduce((sum, c) => sum + (Number(c.unreadCount) || 0), 0);
-        setUnreadCount(total);
-      } catch (err) {
-        console.error('Failed to fetch unread count:', err);
         setUnreadCount(0);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchTotal();
-    fetchUnreadCount();
- 
-    // Refresh every 30 seconds
-    const interval = setInterval(()=>{fetchRequestsCount();fetchTotal();fetchUnreadCount();}, 30000);
-    return () => clearInterval(interval);
+    fetchData();
+
+    const handleUnreadUpdate = (event) => {
+      const total = Number(event?.detail?.total);
+      if (!Number.isNaN(total)) {
+        setUnreadCount(total);
+        setLoading(false);
+      }
+    };
+    
+    // Refresh data every 10 seconds and update instantly from chat page events
+    const interval = setInterval(fetchData, 5000);
+    window.addEventListener('chat:unread-updated', handleUnreadUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('chat:unread-updated', handleUnreadUpdate);
+    };
   }, []);
 
-  // Dynamic menu with count
-  const adminMenu = [
-    { label: 'Dashboard', path: '/admin/dashboard', icon: <FiHome /> },
-    { label: 'Users', path: '/admin/users', icon: <FiUsers /> },
+  // Navigation items with absolute paths
+  const navItems = [
     { 
-      label: (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-          <span>Requests</span>
-          {!loading && requestsCount > 0 && (
-            <span style={{
-              background: '#dc3545',
-              color: 'white',
-              padding: '0.15rem 0.5rem',
-              borderRadius: '12px',
-              fontSize: '0.75rem',
-              fontWeight: '600',
-              minWidth: '20px',
-              textAlign: 'center'
-            }}>
-              {requestsCount}
-            </span>
-          )}
-        </div>
-      ), 
-      path: '/admin/requests', 
-      icon: <FiInbox /> 
+      path: '/admin/dashboard', 
+      icon: <FiHome />, 
+      label: 'Dashboard',
+      exact: true
     },
-    // Removed: separate Candidates & Recruiters entries
     { 
+      path: '/admin/users', 
+      icon: <FiUsers />, 
+      label: 'Users'
+    },
+    { 
+      path: '/admin/chat', 
+      icon: <FiMessageCircle />, 
       label: (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>Chat</span>
           {!loading && unreadCount > 0 && (
             <span style={{
@@ -117,30 +106,41 @@ export default function AdminDashboard() {
             </span>
           )}
         </div>
-      ), 
-      path: '/admin/chat', 
-      icon: <FiMessageCircle /> 
+      )
     },
-    { label: 'Send Notification', path: '/admin/send-notification', icon: <FiBell /> },
-    { label: (
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%' }}>
+    { 
+      path: '/admin/payments', 
+      icon: <FiCreditCard />, 
+      label: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>Payments</span>
-          <span style={{ fontSize:'.75rem', fontWeight:'600', color:'#28a745' }}>
-            ₹{totalAmount}
+          <span style={{ 
+            fontSize: '0.75rem', 
+            fontWeight: '600', 
+            color: '#28a745',
+            whiteSpace: 'nowrap'
+          }}>
+            ₹{totalAmount.toLocaleString()}
           </span>
         </div>
-      ), path:'/admin/payments', icon:<FiCreditCard /> },
+      )
+    },
+    { 
+      path: '/admin/send-notification', 
+      icon: <FiInbox />, 
+      label: 'Send Notification'
+    }
   ];
 
   return (
-    <DashboardLayout menuItems={adminMenu}>
+    <DashboardLayout menuItems={navItems}>
       <Routes>
         <Route path="dashboard" element={<AdminDashboardHome />} />
-        <Route path="requests" element={<Requests />} />
         <Route path="users" element={<Users />} />
         <Route path="chat" element={<Chat />} />
-        <Route path="send-notification" element={<SendNotification />} />
         <Route path="payments" element={<Payments />} />
+        <Route path="send-notification" element={<SendNotification />} />
+        <Route path="edit-profile" element={<AdminEditProfile />} />
         <Route path="*" element={<Navigate to="dashboard" replace />} />
       </Routes>
     </DashboardLayout>

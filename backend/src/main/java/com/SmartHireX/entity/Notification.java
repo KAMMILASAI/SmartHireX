@@ -1,10 +1,18 @@
 package com.SmartHireX.entity;
 
-import jakarta.persistence.*;
+import java.time.Instant;
+import java.time.LocalDateTime;
+
 import org.hibernate.annotations.CreationTimestamp;
+
 import com.fasterxml.jackson.annotation.JsonFormat;
 
-import java.time.LocalDateTime;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "notifications")
@@ -23,6 +31,16 @@ public class Notification {
     @Column(nullable = false, length = 20)
     private String audience;
 
+    // general | job_posted
+    @Column(length = 50)
+    private String notificationType;
+
+    // For job-related notifications
+    private Long relatedJobId;
+
+    // Auto-delete time for time-bound notifications
+    private Instant expiresAt;
+
     @CreationTimestamp
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     @Column(updatable = false)
@@ -40,6 +58,15 @@ public class Notification {
 
     public String getAudience() { return audience; }
     public void setAudience(String audience) { this.audience = audience; }
+
+    public String getNotificationType() { return notificationType; }
+    public void setNotificationType(String notificationType) { this.notificationType = notificationType; }
+
+    public Long getRelatedJobId() { return relatedJobId; }
+    public void setRelatedJobId(Long relatedJobId) { this.relatedJobId = relatedJobId; }
+
+    public Instant getExpiresAt() { return expiresAt; }
+    public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

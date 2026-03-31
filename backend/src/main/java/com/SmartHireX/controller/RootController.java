@@ -21,7 +21,7 @@ public class RootController {
         response.put("message", "SmartHireX API is running");
         response.put("version", "1.0.0");
         response.put("status", "OK");
-        response.put("frontend_url", "https://smarthirex.netlify.app");
+        response.put("frontend_url", "http://localhost:5173");
         return ResponseEntity.ok(response);
     }
 

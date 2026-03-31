@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 import {
   BarChart,
   Bar,
@@ -24,6 +25,17 @@ export default function AdminDashboardHome() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const formatJoinedDate = (value) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString();
+  };
+
+  const normalizeRole = (role) => {
+    if (!role) return 'unknown';
+    return String(role).toLowerCase();
+  };
+
   const fetchStats = async (retryCount = 0) => {
     try {
       setLoading(true);
@@ -34,8 +46,11 @@ export default function AdminDashboardHome() {
         return;
       }
 
-      const res = await axios.get('/api/admin/stats', {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await axios.get(`${API_BASE_URL}/admin/stats`, {
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
         timeout: 10000 // 10 second timeout
       });
       setStats(res.data);
@@ -272,16 +287,16 @@ export default function AdminDashboardHome() {
                         </td>
                         <td className="user-email">{user.email}</td>
                         <td>
-                          <span className={`role-badge ${user.role}`}>
-                            {user.role === 'candidate' ? '👨‍🎓' : '💼'} {user.role}
+                          <span className={`role-badge ${normalizeRole(user.role)}`}>
+                            {normalizeRole(user.role) === 'candidate' ? '👨‍🎓' : '💼'} {normalizeRole(user.role).toUpperCase()}
                           </span>
                         </td>
                         <td className="join-date">
-                          {new Date(user.createdAt).toLocaleDateString()}
+                          {formatJoinedDate(user.createdAt)}
                         </td>
                         <td>
-                          <span className={`status-badge ${user.isApproved !== false ? 'active' : 'pending'}`}>
-                            {user.isApproved !== false ? 'Active' : 'Pending'}
+                          <span className={`status-badge ${user.isOnline ? 'active' : 'inactive'}`}>
+                            {user.isOnline ? 'Active' : 'Inactive'}
                           </span>
                         </td>
                       </tr>

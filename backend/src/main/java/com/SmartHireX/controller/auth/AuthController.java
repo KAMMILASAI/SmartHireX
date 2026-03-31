@@ -1,18 +1,12 @@
 package com.SmartHireX.controller.auth;
 
-import com.SmartHireX.dto.response.AuthResponse;
-import com.SmartHireX.dto.request.LoginRequest;
-import com.SmartHireX.dto.request.RegisterRequest;
-import com.SmartHireX.dto.request.OTPRequest;
-import com.SmartHireX.dto.request.OTPVerificationRequest;
-import com.SmartHireX.dto.request.ResetPasswordRequest;
-import com.SmartHireX.entity.User;
-import com.SmartHireX.entity.OTP;
-import com.SmartHireX.security.JwtTokenProvider;
-import com.SmartHireX.service.UserService;
-import com.SmartHireX.service.OTPService;
-import com.SmartHireX.service.EmailService;
-import jakarta.validation.Valid;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,12 +14,27 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Collections;
-import java.util.Map;
+import com.SmartHireX.dto.request.LoginRequest;
+import com.SmartHireX.dto.request.OTPRequest;
+import com.SmartHireX.dto.request.OTPVerificationRequest;
+import com.SmartHireX.dto.request.RegisterRequest;
+import com.SmartHireX.dto.request.ResetPasswordRequest;
+import com.SmartHireX.dto.response.AuthResponse;
+import com.SmartHireX.entity.OTP;
+import com.SmartHireX.entity.User;
+import com.SmartHireX.security.JwtTokenProvider;
+import com.SmartHireX.security.oauth2.AuthProvider;
+import com.SmartHireX.service.EmailService;
+import com.SmartHireX.service.OTPService;
+import com.SmartHireX.service.UserService;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/auth")
@@ -52,20 +61,26 @@ public class AuthController {
     @PostMapping("/send-registration-otp")
     public ResponseEntity<?> sendRegistrationOTP(@Valid @RequestBody OTPRequest otpRequest) {
         try {
+            logger.info("Received OTP request for email: {}", otpRequest.getEmail());
+            
             if (userService.existsByEmail(otpRequest.getEmail())) {
+                logger.warn("Email already registered: {}", otpRequest.getEmail());
                 return ResponseEntity.badRequest().body(
                     Collections.singletonMap("message", "Email is already registered!")
                 );
             }
             
             String name = otpRequest.getName() != null ? otpRequest.getName() : "User";
+            logger.info("Generating OTP for email: {} with name: {}", otpRequest.getEmail(), name);
+            
             String message = otpService.generateAndSendOTP(otpRequest.getEmail(), name, OTP.OTPType.REGISTRATION);
             
+            logger.info("OTP sent successfully for email: {}", otpRequest.getEmail());
             return ResponseEntity.ok(Collections.singletonMap("message", message));
         } catch (Exception e) {
-            logger.error("Error sending registration OTP", e);
-            return ResponseEntity.badRequest().body(
-                Collections.singletonMap("message", e.getMessage())
+            logger.error("Error sending registration OTP for email: {}", otpRequest.getEmail(), e);
+            return ResponseEntity.status(500).body(
+                Collections.singletonMap("message", "Failed to send OTP: " + e.getMessage())
             );
         }
     }
@@ -105,17 +120,24 @@ public class AuthController {
             // OTP verification is handled separately via /verify-registration-otp endpoint
             // No need to verify OTP again here since it was already verified
             
-            // Enforce recruiter verification policy
+            // Enforce verification policy based on role
             String role = registerRequest.getRole() != null ? registerRequest.getRole().trim().toLowerCase() : "candidate";
             boolean isRecruiter = "recruiter".equalsIgnoreCase(role);
-            // Force verified=false for recruiters, true for others unless explicitly provided
-            registerRequest.setRole(role);
-            if (isRecruiter) {
-                registerRequest.setVerified(false);
-            }
-
-            // Determine if registration came from OAuth2 pre-verified flow
             boolean isOAuth2 = Boolean.TRUE.equals(registerRequest.getOauth2());
+            
+            // Set verification status
+            if (isOAuth2) {
+                // OAuth2 users are considered verified
+                registerRequest.setVerified(true);
+            } else if (isRecruiter) {
+                // Recruiters need admin approval
+                registerRequest.setVerified(false);
+            } else {
+                // Regular users are verified by default after OTP verification
+                registerRequest.setVerified(true);
+            }
+            
+            registerRequest.setRole(role);
 
             // Validate fields conditionally
             String phone = registerRequest.getPhone();
@@ -145,9 +167,7 @@ public class AuthController {
             // Send appropriate email
             try {
                 String firstName = user.getFirstName() != null ? user.getFirstName() : "User";
-                if (isRecruiter) {
-                    emailService.sendRecruiterPendingEmail(user.getEmail(), firstName);
-                } else {
+                if (!isRecruiter) {
                     emailService.sendWelcomeEmail(user.getEmail(), firstName);
                 }
             } catch (Exception e) {
@@ -221,16 +241,29 @@ public class AuthController {
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody OTPRequest otpRequest) {
         try {
-            if (!userService.existsByEmail(otpRequest.getEmail())) {
+            String normalizedEmail = otpRequest.getEmail() == null ? "" : otpRequest.getEmail().trim().toLowerCase();
+            if (normalizedEmail.isEmpty()) {
                 return ResponseEntity.badRequest().body(
-                    Collections.singletonMap("message", "Email not found!")
+                    Collections.singletonMap("message", "Email is required")
+                );
+            }
+
+            User user = userService.findByEmail(normalizedEmail)
+                .orElse(null);
+
+            if (user == null) {
+                return ResponseEntity.badRequest().body(
+                    Collections.singletonMap("message", "Only SmartHireX registered email can use forgot password")
+                );
+            }
+
+            if (user.getProvider() != AuthProvider.LOCAL) {
+                return ResponseEntity.badRequest().body(
+                    Collections.singletonMap("message", "This account uses social login. Please sign in with Google/GitHub")
                 );
             }
             
-            User user = userService.findByEmail(otpRequest.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-            
-            String message = otpService.generateAndSendOTP(otpRequest.getEmail(), user.getFirstName(), OTP.OTPType.PASSWORD_RESET);
+            String message = otpService.generateAndSendOTP(normalizedEmail, user.getFirstName(), OTP.OTPType.PASSWORD_RESET);
             
             return ResponseEntity.ok(Collections.singletonMap("message", message));
         } catch (Exception e) {
@@ -245,13 +278,15 @@ public class AuthController {
     @PostMapping("/verify-forgot-password-otp")
     public ResponseEntity<?> verifyForgotPasswordOTP(@Valid @RequestBody OTPVerificationRequest request) {
         try {
-            if (!userService.existsByEmail(request.getEmail())) {
+            String normalizedEmail = request.getEmail() == null ? "" : request.getEmail().trim().toLowerCase();
+            User user = userService.findByEmail(normalizedEmail).orElse(null);
+            if (user == null || user.getProvider() != AuthProvider.LOCAL) {
                 return ResponseEntity.badRequest().body(
-                    Collections.singletonMap("message", "Email not found!")
+                    Collections.singletonMap("message", "Only SmartHireX registered email can verify forgot password OTP")
                 );
             }
             
-            boolean isValid = otpService.verifyOTPWithType(request.getEmail(), request.getOtp(), OTP.OTPType.PASSWORD_RESET);
+            boolean isValid = otpService.verifyOTPWithType(normalizedEmail, request.getOtp(), OTP.OTPType.PASSWORD_RESET);
             
             if (isValid) {
                 return ResponseEntity.ok(Collections.singletonMap("message", "OTP verified successfully"));
@@ -272,87 +307,36 @@ public class AuthController {
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         try {
-            if (!userService.existsByEmail(request.getEmail())) {
+            String normalizedEmail = request.getEmail() == null ? "" : request.getEmail().trim().toLowerCase();
+            User user = userService.findByEmail(normalizedEmail).orElse(null);
+            if (user == null || user.getProvider() != AuthProvider.LOCAL) {
                 return ResponseEntity.badRequest().body(
-                    Collections.singletonMap("message", "Email not found!")
+                    Collections.singletonMap("message", "Only SmartHireX registered email can reset password")
                 );
             }
             
             // Verify OTP
-            if (!otpService.verifyOTPWithType(request.getEmail(), request.getOtp(), OTP.OTPType.PASSWORD_RESET)) {
+            if (!otpService.verifyOTPWithType(normalizedEmail, request.getOtp(), OTP.OTPType.PASSWORD_RESET)) {
                 return ResponseEntity.badRequest().body(
                     Collections.singletonMap("message", "Invalid or expired OTP")
                 );
             }
             
             // Reset password
-            userService.resetPassword(request.getEmail(), request.getNewPassword());
+            userService.resetPassword(normalizedEmail, request.getNewPassword());
+
+            try {
+                String firstName = user.getFirstName() != null && !user.getFirstName().isBlank()
+                    ? user.getFirstName()
+                    : "User";
+                emailService.sendPasswordResetSuccessEmail(normalizedEmail, firstName);
+            } catch (Exception emailException) {
+                logger.warn("Password reset succeeded but confirmation email failed for {}", normalizedEmail, emailException);
+            }
             
             return ResponseEntity.ok(Collections.singletonMap("message", "Password reset successfully"));
         } catch (Exception e) {
             logger.error("Error resetting password", e);
-            return ResponseEntity.badRequest().body(
-                Collections.singletonMap("message", e.getMessage())
-            );
-        }
-    }
-
-    // Send OTP for login (optional 2FA)
-    @PostMapping("/send-login-otp")
-    public ResponseEntity<?> sendLoginOTP(@Valid @RequestBody OTPRequest otpRequest) {
-        try {
-            if (!userService.existsByEmail(otpRequest.getEmail())) {
-                return ResponseEntity.badRequest().body(
-                    Collections.singletonMap("message", "Email not found!")
-                );
-            }
-            
-            User user = userService.findByEmail(otpRequest.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-            
-            String message = otpService.generateAndSendOTP(otpRequest.getEmail(), user.getFirstName(), OTP.OTPType.LOGIN);
-            
-            return ResponseEntity.ok(Collections.singletonMap("message", message));
-        } catch (Exception e) {
-            logger.error("Error sending login OTP", e);
-            return ResponseEntity.badRequest().body(
-                Collections.singletonMap("message", e.getMessage())
-            );
-        }
-    }
-
-    // Verify OTP for login
-    @PostMapping("/verify-login-otp")
-    public ResponseEntity<?> verifyLoginOTP(@Valid @RequestBody OTPVerificationRequest request) {
-        try {
-            if (!userService.existsByEmail(request.getEmail())) {
-                return ResponseEntity.badRequest().body(
-                    Collections.singletonMap("message", "Email not found!")
-                );
-            }
-            
-            boolean isValid = otpService.verifyOTPWithType(request.getEmail(), request.getOtp(), OTP.OTPType.LOGIN);
-            
-            if (isValid) {
-                User user = userService.findByEmail(request.getEmail())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-                
-                // Create authentication token
-                Authentication authentication = new UsernamePasswordAuthenticationToken(
-                    user.getEmail(), null, Collections.emptyList()
-                );
-                
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-                String jwt = tokenProvider.generateToken(authentication);
-                
-                return ResponseEntity.ok(new AuthResponse(jwt, "Bearer", user));
-            } else {
-                return ResponseEntity.badRequest().body(
-                    Collections.singletonMap("message", "Invalid or expired OTP")
-                );
-            }
-        } catch (Exception e) {
-            logger.error("Error verifying login OTP", e);
             return ResponseEntity.badRequest().body(
                 Collections.singletonMap("message", e.getMessage())
             );
@@ -368,5 +352,24 @@ public class AuthController {
             .orElseThrow(() -> new RuntimeException("User not found"));
             
         return ResponseEntity.ok(user);
+    }
+
+    @GetMapping("/get-started")
+    public ResponseEntity<?> getStarted() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "Welcome to SmartHireX!");
+        response.put("steps", Arrays.asList(
+            "1. Register your account",
+            "2. Verify your email with OTP",
+            "3. Complete your profile",
+            "4. Start applying for jobs or posting jobs"
+        ));
+        response.put("endpoints", Map.of(
+            "register", "/api/auth/register",
+            "login", "/api/auth/login",
+            "sendOTP", "/api/auth/send-registration-otp",
+            "verifyOTP", "/api/auth/verify-registration-otp"
+        ));
+        return ResponseEntity.ok(response);
     }
 }

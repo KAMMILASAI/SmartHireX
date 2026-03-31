@@ -1,30 +1,47 @@
 package com.SmartHireX.controller.candidate;
 
-import com.SmartHireX.entity.CandidateProfile;
-import com.SmartHireX.entity.PracticeSession;
-import com.SmartHireX.entity.User;
-import com.SmartHireX.model.JobPosting;
-import com.SmartHireX.model.Application;
-import com.SmartHireX.repository.ApplicationRepository;
-import com.SmartHireX.repository.CandidateProfileRepository;
-import com.SmartHireX.repository.JobRepository;
-import com.SmartHireX.security.CurrentUser;
-import com.SmartHireX.security.UserPrincipal;
-import com.SmartHireX.service.PracticeSessionService;
-import com.SmartHireX.service.GeminiQuestionService;
-import com.SmartHireX.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
-import java.util.stream.Collectors;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import com.SmartHireX.dto.CodingChallenge;
+import com.SmartHireX.entity.CandidateProfile;
+import com.SmartHireX.entity.ResumeAnalysisHistory;
+import com.SmartHireX.entity.User;
+import com.SmartHireX.model.Application;
+import com.SmartHireX.model.JobPosting;
+import com.SmartHireX.repository.ApplicationRepository;
+import com.SmartHireX.repository.CandidateProfileRepository;
+import com.SmartHireX.repository.JobRepository;
+import com.SmartHireX.repository.ResumeAnalysisHistoryRepository;
+import com.SmartHireX.security.CurrentUser;
+import com.SmartHireX.security.UserPrincipal;
+import com.SmartHireX.service.GeminiQuestionService;
+import com.SmartHireX.service.PracticeSessionService;
+import com.SmartHireX.service.RoundService;
+import com.SmartHireX.service.UserService;
 
 @RestController
 @RequestMapping("/candidate")
@@ -45,9 +62,18 @@ public class CandidateController {
 
     @Autowired
     private ApplicationRepository applicationRepository;
+    
+    @Autowired
+    private com.SmartHireX.service.ApplicationService applicationService;
 
     @Autowired
     private GeminiQuestionService geminiQuestionService;
+    
+    @Autowired
+    private RoundService roundService;
+
+    @Autowired
+    private ResumeAnalysisHistoryRepository resumeAnalysisHistoryRepository;
 
     @GetMapping("/test")
     public ResponseEntity<?> testEndpoint() {
@@ -76,15 +102,7 @@ public class CandidateController {
                 item.put("_id", a.getId());
                 item.put("id", a.getId());
 
-                // Map backend statuses to frontend expectations
-                String st = a.getStatus();
-                String mapped;
-                if ("reviewed".equalsIgnoreCase(st) || "under_review".equalsIgnoreCase(st)) mapped = "under_review";
-                else if ("interviewed".equalsIgnoreCase(st)) mapped = "interview_scheduled";
-                else if ("hired".equalsIgnoreCase(st)) mapped = "shortlisted";
-                else if ("rejected".equalsIgnoreCase(st)) mapped = "rejected";
-                else mapped = "applied";
-                item.put("status", mapped);
+                item.put("status", a.getStatus());
 
                 item.put("appliedAt", a.getCreatedAt());
                 item.put("updatedAt", null);
@@ -110,6 +128,122 @@ public class CandidateController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Failed to fetch applications");
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+
+    @PutMapping("/applications/update-interview-status")
+    @PreAuthorize("hasRole('RECRUITER') or hasRole('ADMIN')")
+    public ResponseEntity<?> updateInterviewStatusForApplications(@RequestBody Map<String, Object> body) {
+        try {
+            Object emailsObj = body.get("candidateEmails");
+            Object jobIdObj = body.get("jobId");
+            String status = Objects.toString(body.getOrDefault("status", "")).trim();
+
+            if (!(emailsObj instanceof List<?> emailList) || emailList.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "candidateEmails is required"));
+            }
+            if (jobIdObj == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "jobId is required"));
+            }
+            if (status.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "status is required"));
+            }
+
+            Long jobId = Long.valueOf(jobIdObj.toString());
+            int updated = 0;
+
+            for (Object e : emailList) {
+                if (e == null) continue;
+                String email = e.toString().trim().toLowerCase();
+                if (email.isEmpty()) continue;
+
+                List<Application> apps = applicationRepository.findByEmailLowerOrderByCreatedAtDesc(email);
+                for (Application app : apps) {
+                    if (app.getJob() != null && Objects.equals(app.getJob().getId(), jobId)) {
+                        app.setStatus(status);
+                        applicationRepository.save(app);
+                        updated++;
+                    }
+                }
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "updatedCount", updated,
+                    "status", status,
+                    "jobId", jobId
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "error", "Failed to update interview status",
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    @GetMapping("/shortlisted-jobs")
+    public ResponseEntity<?> getShortlistedJobs(@CurrentUser UserPrincipal userPrincipal) {
+        try {
+            User user = userService.findById(userPrincipal.getId())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            String emailLower = user.getEmail() != null ? user.getEmail().toLowerCase() : null;
+            if (emailLower == null || emailLower.isBlank()) {
+                return ResponseEntity.ok(List.of());
+            }
+
+            // Get shortlisted applications
+            List<Application> shortlistedApps = applicationRepository.findByEmailLowerOrderByCreatedAtDesc(emailLower)
+                    .stream()
+                    .filter(app -> "shortlisted".equals(app.getStatus()))
+                    .collect(Collectors.toList());
+
+            List<Map<String, Object>> response = new ArrayList<>();
+            for (Application app : shortlistedApps) {
+                JobPosting job = app.getJob();
+                if (job != null) {
+                    Map<String, Object> jobData = new HashMap<>();
+                    jobData.put("id", job.getId());
+                    jobData.put("_id", job.getId());
+                    jobData.put("title", job.getTitle());
+                    jobData.put("company", job.getCompany());
+                    jobData.put("location", job.getLocation());
+                    jobData.put("ctc", job.getCtc());
+                    jobData.put("employmentType", job.getEmploymentType());
+                    
+                    // Add rounds information
+                    List<Map<String, Object>> rounds = new ArrayList<>();
+                    try {
+                        var jobRounds = roundService.getRoundsByJobId(job.getId());
+                        for (var round : jobRounds) {
+                            Map<String, Object> roundData = new HashMap<>();
+                            roundData.put("id", round.getId());
+                            roundData.put("_id", round.getId());
+                            roundData.put("title", round.getTitle());
+                            roundData.put("description", round.getDescription());
+                            roundData.put("type", round.getType());
+                            roundData.put("duration", round.getDuration());
+                            roundData.put("startTime", round.getStartTime());
+                            roundData.put("mcqQuestions", round.getMcqQuestions());
+                            roundData.put("codingQuestions", round.getCodingQuestions());
+                            roundData.put("totalQuestions", round.getTotalQuestions());
+                            rounds.add(roundData);
+                        }
+                    } catch (Exception e) {
+                        System.out.println("Error fetching rounds for job " + job.getId() + ": " + e.getMessage());
+                    }
+                    jobData.put("rounds", rounds);
+                    
+                    response.add(jobData);
+                }
+            }
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Failed to fetch shortlisted jobs");
             error.put("message", e.getMessage());
             return ResponseEntity.status(500).body(error);
         }
@@ -220,10 +354,11 @@ public class CandidateController {
 
             String tech = String.valueOf(body.getOrDefault("tech", "General"));
             String difficulty = String.valueOf(body.getOrDefault("difficulty", "Medium"));
+            Integer testCases = (Integer) body.getOrDefault("testCases", 10);
             String primary = Arrays.stream(tech.split(",")).map(String::trim).filter(s -> !s.isEmpty()).findFirst().orElse("General");
             CandidateProfile profile = candidateProfileRepository.findByUser(user).orElse(null);
 
-            var challenge = geminiQuestionService.generateCoding(user, profile, primary, difficulty);
+            CodingChallenge challenge = geminiQuestionService.generateCoding(user, profile, primary, difficulty, testCases);
 
             Map<String, Object> coding = new HashMap<>();
             coding.put("title", challenge.getTitle());
@@ -245,72 +380,6 @@ public class CandidateController {
         }
     }
 
-    // --- Practice: Save session ---
-    @PostMapping("/practice/save-session")
-    public ResponseEntity<?> savePracticeSession(@CurrentUser UserPrincipal userPrincipal,
-                                                 @RequestBody Map<String, Object> body) {
-        try {
-            User user = userService.findById(userPrincipal.getId())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            String type = String.valueOf(body.getOrDefault("type", "mcq"));
-            int score = 0;
-            int totalQuestions = 0;
-            int correctAnswers = 0;
-            try { score = Integer.parseInt(String.valueOf(body.getOrDefault("score", 0))); } catch (Exception ignored) {}
-            try { totalQuestions = Integer.parseInt(String.valueOf(body.getOrDefault("totalQuestions", 0))); } catch (Exception ignored) {}
-
-            // derive correctAnswers if provided in questions payload
-            Object qs = body.get("questions");
-            if (qs instanceof List<?> list) {
-                for (Object o : list) {
-                    if (o instanceof Map<?, ?> m) {
-                        Object isCorrect = m.get("isCorrect");
-                        if (isCorrect != null && Boolean.parseBoolean(String.valueOf(isCorrect))) correctAnswers++;
-                    }
-                }
-            }
-
-            PracticeSession session = new PracticeSession();
-            session.setUser(user);
-            session.setType(type);
-            session.setScore(score);
-            session.setTotalQuestions(totalQuestions);
-            session.setCorrectAnswers(correctAnswers);
-            // Robust percentage calculation:
-            // - If score <= totalQuestions: treat as number of correct answers (MCQ), compute ratio
-            // - Else if score in [0,100]: treat as direct percentage (coding)
-            int percentage;
-            if (totalQuestions > 0 && score <= totalQuestions) {
-                percentage = (int) Math.round((score * 100.0) / Math.max(1, totalQuestions));
-            } else if (score >= 0 && score <= 100) {
-                percentage = score;
-            } else {
-                percentage = 0;
-            }
-            session.setPercentage(percentage);
-
-            // Persist the practice session
-            PracticeSession saved = practiceSessionService.saveSession(session);
-
-            // Build response with saved details
-            Map<String, Object> resp = new HashMap<>();
-            resp.put("status", "ok");
-            resp.put("id", saved.getId());
-            resp.put("type", saved.getType());
-            resp.put("score", saved.getScore());
-            resp.put("totalQuestions", saved.getTotalQuestions());
-            resp.put("correctAnswers", saved.getCorrectAnswers());
-            resp.put("percentage", saved.getPercentage());
-            resp.put("createdAt", saved.getCreatedAt());
-            return ResponseEntity.ok(resp);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of(
-                    "error", "Failed to save practice session",
-                    "message", e.getMessage()
-            ));
-        }
-    }
 
     @GetMapping("/jobs")
     public ResponseEntity<?> getAvailableJobs(@CurrentUser UserPrincipal userPrincipal) {
@@ -319,7 +388,12 @@ public class CandidateController {
             userService.findById(userPrincipal.getId())
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            List<JobPosting> jobs = jobRepository.findActiveNonExpired(Instant.now());
+            List<JobPosting> allJobs = jobRepository.findByStatusOrderByCreatedAtDesc("active");
+            
+            // Filter to only show public jobs
+            List<JobPosting> jobs = allJobs.stream()
+                    .filter(job -> job.getIsPublic() != null && job.getIsPublic())
+                    .collect(Collectors.toList());
 
             List<Map<String, Object>> response = new ArrayList<>();
             for (JobPosting j : jobs) {
@@ -342,10 +416,14 @@ public class CandidateController {
                 } else {
                     item.put("skills", Collections.emptyList());
                 }
-                item.put("expiresAt", j.getExpiresAt() != null ? j.getExpiresAt().toString() : null);
+                item.put("startDate", j.getStartDate() != null ? j.getStartDate().toString() : null);
+                item.put("endDate", j.getEndDate() != null ? j.getEndDate().toString() : null);
                 item.put("posted", j.getCreatedAt() != null ? j.getCreatedAt().toString() : null);
                 item.put("status", "not_applied"); // default for listing
                 item.put("linkId", j.getLinkId());
+                // Add expired status
+                boolean isExpired = j.getEndDate() != null && j.getEndDate().isBefore(Instant.now());
+                item.put("isExpired", isExpired);
                 response.add(item);
             }
 
@@ -353,6 +431,72 @@ public class CandidateController {
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
             error.put("error", "Failed to fetch jobs");
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(500).body(error);
+        }
+    }
+
+    @PostMapping("/jobs/access-code")
+    public ResponseEntity<?> getJobByAccessCode(@CurrentUser UserPrincipal userPrincipal, @RequestBody Map<String, String> request) {
+        try {
+            // Ensure user exists (auth already validated)
+            userService.findById(userPrincipal.getId())
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+
+            String accessCode = request.get("accessCode");
+            if (accessCode == null || accessCode.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Access code is required"));
+            }
+
+            // Find job by access code
+            List<JobPosting> allJobs = jobRepository.findActiveNonExpired(Instant.now());
+            JobPosting job = allJobs.stream()
+                    .filter(j -> accessCode.trim().equalsIgnoreCase(j.getAccessCode()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (job == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Invalid access code or job not found"));
+            }
+
+            // Check if job is private
+            if (job.getIsPublic() == null || job.getIsPublic()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "This job is public and doesn't require an access code"));
+            }
+
+            // Return job details
+            Map<String, Object> response = new HashMap<>();
+            response.put("_id", job.getId());
+            response.put("id", job.getId());
+            response.put("title", job.getTitle());
+            response.put("description", job.getDescription());
+            response.put("company", job.getCompany());
+            response.put("location", job.getLocation());
+            
+            // Convert comma-separated skills to array
+            if (job.getSkills() != null && !job.getSkills().isBlank()) {
+                String[] parts = job.getSkills().split(",");
+                List<String> skills = new ArrayList<>();
+                for (String p : parts) {
+                    String s = p.trim();
+                    if (!s.isEmpty()) skills.add(s);
+                }
+                response.put("skills", skills);
+            } else {
+                response.put("skills", Collections.emptyList());
+            }
+            
+            response.put("startDate", job.getStartDate() != null ? job.getStartDate().toString() : null);
+            response.put("endDate", job.getEndDate() != null ? job.getEndDate().toString() : null);
+            response.put("posted", job.getCreatedAt() != null ? job.getCreatedAt().toString() : null);
+            response.put("status", "not_applied");
+            response.put("linkId", job.getLinkId());
+            response.put("isPrivate", true);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Failed to access job");
             error.put("message", e.getMessage());
             return ResponseEntity.status(500).body(error);
         }
@@ -410,27 +554,33 @@ public class CandidateController {
 
     @PutMapping("/profile")
     public ResponseEntity<?> updateProfile(@CurrentUser UserPrincipal userPrincipal,
-                                         @RequestParam(required = false) String name,
-                                         @RequestParam(required = false) String email,
-                                         @RequestParam(required = false) String college,
-                                         @RequestParam(required = false) String regNo,
-                                         @RequestParam(required = false) String location,
-                                         @RequestParam(required = false) String portfolio,
-                                         @RequestParam(required = false) String github,
-                                         @RequestParam(required = false) String linkedin,
-                                         @RequestParam(required = false) String skills,
-                                         // extended fields
-                                         @RequestParam(required = false) String profileType,
-                                         @RequestParam(required = false) Boolean isFresher,
-                                         @RequestParam(required = false) String degree,
-                                         @RequestParam(required = false) Double cgpa,
-                                         @RequestParam(required = false) String company,
-                                         @RequestParam(required = false) Double lpa,
-                                         @RequestParam(required = false) Double yearsExp,
+                                         @RequestParam Map<String, String> params,
                                          @RequestParam(required = false) MultipartFile image) {
         try {
+            System.out.println("DEBUG - Profile update request received");
+            System.out.println("DEBUG - Params: " + params);
+            
             User user = userService.findById(userPrincipal.getId())
                     .orElseThrow(() -> new RuntimeException("User not found"));
+
+            // Extract parameters from the map
+            String name = params.get("name");
+            String email = params.get("email");
+            String phone = params.get("phone");
+            String college = params.get("college");
+            String regNo = params.get("regNo");
+            String location = params.get("location");
+            String portfolio = params.get("portfolio");
+            String github = params.get("github");
+            String linkedin = params.get("linkedin");
+            String skills = params.get("skills");
+            String profileType = params.get("profileType");
+            String isFresherStr = params.get("isFresher");
+            String degree = params.get("degree");
+            String cgpaStr = params.get("cgpa");
+            String company = params.get("company");
+            String lpaStr = params.get("lpa");
+            String yearsExpStr = params.get("yearsExp");
 
             // Update basic user fields
             if (name != null && !name.trim().isEmpty()) {
@@ -445,6 +595,10 @@ public class CandidateController {
             
             if (email != null && !email.trim().isEmpty()) {
                 user.setEmail(email.trim());
+            }
+
+            if (phone != null) {
+                user.setPhone(phone.trim());
             }
 
             // Save user basic changes (name/email)
@@ -467,14 +621,30 @@ public class CandidateController {
             if (linkedin != null) candidateProfile.setLinkedin(linkedin.trim());
             if (skills != null) candidateProfile.setSkills(skills.trim());
 
-            // Extended fields
+            // Extended fields with proper parsing
             if (profileType != null && !profileType.isBlank()) candidateProfile.setProfileType(profileType.trim());
-            if (isFresher != null) candidateProfile.setIsFresher(isFresher);
+            if (isFresherStr != null) {
+                try {
+                    candidateProfile.setIsFresher(Boolean.parseBoolean(isFresherStr));
+                } catch (Exception ignored) {}
+            }
             if (degree != null) candidateProfile.setDegree(degree.trim());
-            if (cgpa != null) candidateProfile.setCgpa(cgpa);
+            if (cgpaStr != null && !cgpaStr.trim().isEmpty()) {
+                try {
+                    candidateProfile.setCgpa(Double.parseDouble(cgpaStr.trim()));
+                } catch (Exception ignored) {}
+            }
             if (company != null) candidateProfile.setCompany(company.trim());
-            if (lpa != null) candidateProfile.setLpa(lpa);
-            if (yearsExp != null) candidateProfile.setYearsExp(yearsExp);
+            if (lpaStr != null && !lpaStr.trim().isEmpty()) {
+                try {
+                    candidateProfile.setLpa(Double.parseDouble(lpaStr.trim()));
+                } catch (Exception ignored) {}
+            }
+            if (yearsExpStr != null && !yearsExpStr.trim().isEmpty()) {
+                try {
+                    candidateProfile.setYearsExp(Double.parseDouble(yearsExpStr.trim()));
+                } catch (Exception ignored) {}
+            }
 
             // Handle image upload
             if (image != null && !image.isEmpty()) {
@@ -553,8 +723,8 @@ public class CandidateController {
             dashboard.put("linkedin", candidateProfile.getLinkedin() != null ? candidateProfile.getLinkedin() : "");
             dashboard.put("skills", candidateProfile.getSkills() != null ? candidateProfile.getSkills() : "");
             dashboard.put("image", candidateProfile.getProfileImage() != null ? candidateProfile.getProfileImage() : "");
-            dashboard.put("resumeScore", candidateProfile.getResumeScore() != null ? candidateProfile.getResumeScore() : 75);
-            dashboard.put("interviewsAttended", candidateProfile.getInterviewsAttended() != null ? candidateProfile.getInterviewsAttended() : 3);
+            dashboard.put("resumeScore", candidateProfile.getResumeScore() != null ? candidateProfile.getResumeScore() : 0);
+            dashboard.put("interviewsAttended", candidateProfile.getInterviewsAttended() != null ? candidateProfile.getInterviewsAttended() : 0);
             dashboard.put("practiceSessionsCompleted", (int) practiceSessionService.getTotalSessionCount(user));
             dashboard.put("dailyStreak", practiceSessionService.calculateDailyStreak(user));
             
@@ -568,28 +738,6 @@ public class CandidateController {
         }
     }
 
-    @GetMapping("/practice/history")
-    public ResponseEntity<?> getPracticeHistory(@CurrentUser UserPrincipal userPrincipal,
-                                              @RequestParam(defaultValue = "10") int limit) {
-        try {
-            User user = userService.findById(userPrincipal.getId())
-                    .orElseThrow(() -> new RuntimeException("User not found"));
-
-            List<PracticeSession> sessions = practiceSessionService.getPracticeHistory(user, limit);
-            
-            Map<String, Object> response = new HashMap<>();
-            response.put("sessions", sessions);
-            response.put("totalSessions", practiceSessionService.getTotalSessionCount(user));
-            
-            return ResponseEntity.ok(response);
-            
-        } catch (Exception e) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Failed to fetch practice history");
-            error.put("message", e.getMessage());
-            return ResponseEntity.status(500).body(error);
-        }
-    }
 
     @GetMapping("/resume-score-history")
     public ResponseEntity<?> getResumeScoreHistory(@CurrentUser UserPrincipal userPrincipal) {
@@ -600,19 +748,34 @@ public class CandidateController {
             CandidateProfile candidateProfile = candidateProfileRepository.findByUser(user)
                     .orElse(new CandidateProfile());
 
-            // Mock resume score history for now
+            // Prefer real analysis history from resume_analysis_history table.
             List<Map<String, Object>> history = new ArrayList<>();
-            Map<String, Object> initial = new HashMap<>();
-            initial.put("period", "Resume 0");
-            initial.put("score", 45);
-            initial.put("label", "Initial");
-            history.add(initial);
-            
-            Map<String, Object> current = new HashMap<>();
-            current.put("period", "Resume 1");
-            current.put("score", candidateProfile.getResumeScore() != null ? candidateProfile.getResumeScore() : 75);
-            current.put("label", "Latest");
-            history.add(current);
+
+            List<ResumeAnalysisHistory> savedHistory =
+                    resumeAnalysisHistoryRepository.findByUserEmailOrderByCreatedAtDesc(user.getEmail());
+
+            if (savedHistory != null && !savedHistory.isEmpty()) {
+                for (int i = savedHistory.size() - 1; i >= 0; i--) {
+                    ResumeAnalysisHistory item = savedHistory.get(i);
+                    Integer scoreValue = item.getOverallScore() == null ? Integer.valueOf(0) : item.getOverallScore();
+                    Map<String, Object> record = new HashMap<>();
+                    record.put("period", "Analysis " + (savedHistory.size() - i));
+                    record.put("score", scoreValue);
+                    record.put("overallScore", scoreValue);
+                    record.put("label", item.getCreatedAt() != null ? item.getCreatedAt().toLocalDate().toString() : "Latest");
+                    record.put("createdAt", item.getCreatedAt());
+                    history.add(record);
+                }
+            } else if (candidateProfile.getResumeScore() != null && candidateProfile.getResumeScore() > 0) {
+                // Fallback for old data where only candidate_profiles.resume_score exists.
+                Map<String, Object> current = new HashMap<>();
+                current.put("period", "Current Resume");
+                current.put("score", candidateProfile.getResumeScore());
+                current.put("overallScore", candidateProfile.getResumeScore());
+                current.put("label", "Latest");
+                current.put("createdAt", candidateProfile.getUpdatedAt());
+                history.add(current);
+            }
             
             Map<String, Object> response = new HashMap<>();
             response.put("history", history);
@@ -633,26 +796,15 @@ public class CandidateController {
             @RequestParam("jobDescription") String jobDescription,
             @CurrentUser User currentUser) {
         try {
-            // Mock AI resume analysis for now
+            // Return error - AI resume analysis not implemented
             Map<String, Object> response = new HashMap<>();
-            response.put("score", 78);
+            response.put("error", "AI resume analysis service is not available");
+            response.put("message", "This feature requires AI service integration");
+            response.put("score", 0);
+            response.put("strengths", new ArrayList<>());
+            response.put("weaknesses", new ArrayList<>());
             
-            List<String> strengths = Arrays.asList(
-                "Strong technical skills mentioned",
-                "Relevant work experience",
-                "Good educational background",
-                "Clear formatting and structure"
-            );
-            response.put("strengths", strengths);
-            
-            List<String> weaknesses = Arrays.asList(
-                "Could add more quantified achievements",
-                "Missing some keywords from job description",
-                "Consider adding more project details"
-            );
-            response.put("weaknesses", weaknesses);
-            
-            return ResponseEntity.ok(response);
+            return ResponseEntity.status(503).body(response);
             
         } catch (Exception e) {
             Map<String, String> error = new HashMap<>();
@@ -681,5 +833,29 @@ public class CandidateController {
         
         // Return relative path
         return "/uploads/profiles/" + filename;
+    }
+    
+    /**
+     * Manual endpoint to trigger auto-rejection process for testing
+     * This will process all ended rounds and reject applications for non-attempts
+     */
+    @PostMapping("/process-ended-rounds")
+    public ResponseEntity<?> processEndedRounds(@CurrentUser UserPrincipal userPrincipal) {
+        try {
+            // Trigger the auto-rejection process manually
+            applicationService.processEndedRounds();
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Auto-rejection process completed successfully");
+            response.put("status", "success");
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Failed to process ended rounds");
+            error.put("message", e.getMessage());
+            return ResponseEntity.status(500).body(error);
+        }
     }
 }

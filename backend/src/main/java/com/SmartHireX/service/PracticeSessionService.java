@@ -1,22 +1,34 @@
 package com.SmartHireX.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+
 import com.SmartHireX.entity.PracticeSession;
 import com.SmartHireX.entity.User;
 import com.SmartHireX.repository.PracticeSessionRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.stereotype.Service;
 
+import jakarta.persistence.EntityNotFoundException;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 @Service
 public class PracticeSessionService {
 
     @Autowired
     private PracticeSessionRepository practiceSessionRepository;
+    
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public PracticeSession saveSession(PracticeSession session) {
         return practiceSessionRepository.save(session);
@@ -68,34 +80,92 @@ public class PracticeSessionService {
     }
 
     public List<PracticeSession> getPracticeHistory(User user, int limit) {
-        // Return only real sessions from DB; do NOT generate mock data
-        return practiceSessionRepository.findByUserWithLimit(user, PageRequest.of(0, limit));
+        // Return only persisted sessions from DB
+        List<PracticeSession> sessions = practiceSessionRepository.findByUserWithLimit(user, PageRequest.of(0, limit));
+        
+        // Deserialize questions from JSON for each session
+        for (PracticeSession session : sessions) {
+            if (session.getQuestionsJson() != null && !session.getQuestionsJson().isEmpty()) {
+                try {
+                    TypeReference<List<PracticeSession.PracticeQuestion>> typeRef = new TypeReference<List<PracticeSession.PracticeQuestion>>() {};
+                    List<PracticeSession.PracticeQuestion> questions = objectMapper.readValue(session.getQuestionsJson(), typeRef);
+                    session.setQuestions(questions);
+                } catch (JsonProcessingException e) {
+                    System.err.println("Error deserializing questions for session " + session.getId() + ": " + e.getMessage());
+                    session.setQuestions(new ArrayList<>());
+                }
+            }
+        }
+        
+        return sessions;
     }
 
     public long getTotalSessionCount(User user) {
-        // Report the true count only; do NOT seed mock sessions
+        // Report persisted session count only
         return practiceSessionRepository.countByUser(user);
     }
 
     public int calculateDailyStreak(User user) {
         List<PracticeSession> sessions = practiceSessionRepository.findByUserOrderByCreatedAtDesc(user);
         if (sessions.isEmpty()) return 0;
-        
-        int streak = 0;
-        LocalDateTime currentDate = LocalDateTime.now().withHour(0).withMinute(0).withSecond(0).withNano(0);
-        
+
+        // Use unique activity dates so multiple sessions in one day don't inflate streak.
+        Set<LocalDate> activityDates = new HashSet<>();
         for (PracticeSession session : sessions) {
-            LocalDateTime sessionDate = session.getCreatedAt().withHour(0).withMinute(0).withSecond(0).withNano(0);
-            long daysDiff = java.time.Duration.between(sessionDate, currentDate).toDays();
-            
-            if (daysDiff == streak) {
-                streak++;
-                currentDate = currentDate.minusDays(1);
-            } else if (daysDiff > streak) {
-                break;
+            if (session.getCreatedAt() != null) {
+                activityDates.add(session.getCreatedAt().toLocalDate());
+            }
+        }
+
+        LocalDate currentDay = LocalDate.now();
+        int streak = 0;
+
+        while (activityDates.contains(currentDay)) {
+            streak++;
+            currentDay = currentDay.minusDays(1);
+        }
+
+        return streak;
+    }
+
+    public PracticeSession findByIdAndUser(Long id, User user) {
+        PracticeSession session = practiceSessionRepository.findByIdAndUser(id, user)
+                .orElseThrow(() -> new EntityNotFoundException("Practice session not found"));
+        
+        // Deserialize questions from JSON
+        if (session.getQuestionsJson() != null && !session.getQuestionsJson().isEmpty()) {
+            try {
+                TypeReference<List<PracticeSession.PracticeQuestion>> typeRef = new TypeReference<List<PracticeSession.PracticeQuestion>>() {};
+                List<PracticeSession.PracticeQuestion> questions = objectMapper.readValue(session.getQuestionsJson(), typeRef);
+                session.setQuestions(questions);
+            } catch (JsonProcessingException e) {
+                System.err.println("Error deserializing questions for session " + session.getId() + ": " + e.getMessage());
+                session.setQuestions(new ArrayList<>());
             }
         }
         
-        return streak;
+        return session;
+    }
+
+    public PracticeSession saveSessionWithQuestions(PracticeSession session, List<PracticeSession.PracticeQuestion> questions) {
+        // Serialize questions to JSON
+        try {
+            String questionsJson = objectMapper.writeValueAsString(questions);
+            session.setQuestionsJson(questionsJson);
+        } catch (JsonProcessingException e) {
+            System.err.println("Error serializing questions: " + e.getMessage());
+        }
+        
+        session.setQuestions(questions);
+        session.setTotalQuestions(questions.size());
+        session.setCorrectAnswers((int) questions.stream().filter(q -> Boolean.TRUE.equals(q.getIsCorrect())).count());
+        session.setScore(session.getCorrectAnswers());
+        session.setPercentage((int) ((session.getScore() * 100.0) / session.getTotalQuestions()));
+        return practiceSessionRepository.save(session);
+    }
+
+    public List<PracticeSession> getPracticeSessionsWithLimit(User user, int limit) {
+        Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return practiceSessionRepository.findByUserWithLimit(user, pageable);
     }
 }

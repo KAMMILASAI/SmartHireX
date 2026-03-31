@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../config';
+import axios from 'axios';
 import './MCQs.css';
 
 export default function MCQs() {
   const containerRef = useRef(null);
   const headerRef = useRef(null);
   const location = useLocation();
+  const navigate = useNavigate();
+  
+  // This component is for PRACTICE MODE ONLY
+  const isTestMode = false;
+  
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
@@ -18,18 +25,22 @@ export default function MCQs() {
   const [examStarted, setExamStarted] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [result, setResult] = useState(null); // {score, total}
-  const [webcamStream, setWebcamStream] = useState(null);
-  const [webcamPermission, setWebcamPermission] = useState('pending');
   const [showQuestionStatus, setShowQuestionStatus] = useState(false);
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light'
-  // Simple inline mode to remove current complex structure (fullscreen, terms, webcam)
+  // Simple mode for practice
   const [simpleMode] = useState(true);
   const [timerEnabled, setTimerEnabled] = useState(true);
-  const [fsStarted, setFsStarted] = useState(false); // show overlay to enable fullscreen via user gesture
-  const [showSimpleSidebar, setShowSimpleSidebar] = useState(true);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSimpleSidebar, setShowSimpleSidebar] = useState(true);
+  const [webcamStream, setWebcamStream] = useState(null);
+  const [webcamPermission, setWebcamPermission] = useState('pending');
+  const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
+  const [isInitializingProctor, setIsInitializingProctor] = useState(false);
+  
+  // Constants for security limits
+  const MAX_TAB_SWITCHES = 3;
+  const MAX_WARNINGS = 5;
 
-  const navigate = useNavigate();
   const query = new URLSearchParams(location.search);
   const companyOrRecruiter =
     query.get('company') || query.get('recruiter') || 'Assessment Platform';
@@ -37,6 +48,9 @@ export default function MCQs() {
   useEffect(() => {
     // Load MCQ questions (prefer state from navigation)
     const state = location.state || {};
+    
+    
+    // Normal question loading (not resumed session)
     const incoming = Array.isArray(state.questions) ? state.questions : null;
     const enabled = typeof state.timerEnabled === 'boolean' ? state.timerEnabled : true;
     const minutes = Number.isFinite(state.timerMinutes) && state.timerMinutes > 0 ? state.timerMinutes : 30;
@@ -60,7 +74,7 @@ export default function MCQs() {
         const deriveCorrectIndex = (qObj, opts) => {
           const cand = qObj.correctAnswer ?? qObj.answerIndex ?? qObj.correct ?? qObj.answer ?? qObj.key ?? qObj.correctOption ?? qObj.correct_choice ?? qObj.solution;
           if (typeof cand === 'number' && Number.isFinite(cand)) {
-            if (cand >= 1 && cand <= opts.length) return cand - 1; // 1-based -> 0-based
+            if (cand >= 1 && cand <= opts.length) return cand - 1;
             return cand;
           }
           if (typeof cand === 'string') {
@@ -69,10 +83,14 @@ export default function MCQs() {
             const byText = opts.findIndex(o => (o ?? '').toString().trim().toLowerCase() === cleanOpt(s).toLowerCase());
             if (byText !== -1) return byText;
             const num = parseInt(s, 10);
-            if (!isNaN(num)) return (num >= 1 && num <= opts.length) ? num - 1 : num;
+            if (!isNaN(num)) {
+              if (num >= 1 && num <= opts.length) return num - 1;
+              return num;
+            }
           }
           return undefined;
         };
+
         const normalized = incoming
           .map((q, idx) => {
             const options = (q.options ?? q.choices ?? q.answers ?? []).map(cleanOpt);
@@ -85,18 +103,18 @@ export default function MCQs() {
           })
           .filter(q => q.question && Array.isArray(q.options) && q.options.length > 0);
         setQuestions(normalized);
+        setExamStarted(true); // Start exam when questions are loaded
       } catch {
         setQuestions(incoming);
+        setExamStarted(true); // Start exam even with fallback questions
       }
-      return; // skip mock load
+      return;
     }
     loadQuestions();
   }, []);
 
   useEffect(() => {
     if (examStarted) {
-      // Enter fullscreen mode
-      enterFullscreen();
       // Disable security features
       disableSecurityFeatures();
     }
@@ -107,6 +125,7 @@ export default function MCQs() {
       }
     };
   }, [examStarted]);
+
 
   // Sync theme class globally (html, body, #root) for background/text
   useEffect(() => {
@@ -159,78 +178,53 @@ export default function MCQs() {
   const loadQuestions = async () => {
     setLoading(true);
     try {
-      // Load MCQs dynamically from backend (proxy to Gemini)
-      // Accepts optional query params: topic, level, count
+      // Practice mode only - generate practice questions from backend
       const sp = new URLSearchParams(location.search);
       const state = (location && location.state) || {};
       const topic = sp.get('topic') || state.topic || 'general';
       const level = sp.get('level') || state.level || 'mixed';
       const count = sp.get('count') || state.count || 10;
-
-      const url = `/api/candidate/mcqs?topic=${encodeURIComponent(topic)}&level=${encodeURIComponent(level)}&count=${encodeURIComponent(count)}`;
-      const res = await fetch(url, { credentials: 'include' });
+      
+      const apiUrl = `${API_BASE_URL}/candidate/practice/mcqs`;
+      
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          topic: topic,
+          level: level,
+          count: parseInt(count)
+        })
+      });
+      
       if (!res.ok) {
-        console.warn('MCQ API returned non-OK status:', res.status);
-        setQuestions([]);
+        throw new Error('Failed to load practice questions. Please try again later.');
+      }
+      
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        // Normalize question format
+        const normalized = data.map((q, idx) => ({
+          id: q.id ?? q.questionId ?? `q-${idx + 1}`,
+          question: q.questionText ?? q.question ?? q.prompt ?? q.text ?? `Question ${idx + 1}`,
+          options: Array.isArray(q.options) ? q.options : (q.choices ?? q.answers ?? []),
+          correctAnswer: q.correctAnswer // Show correct answers in practice mode
+        })).filter(q => q.question && Array.isArray(q.options) && q.options.length > 0);
+        
+        setQuestions(normalized);
+        setExamStarted(true); // Start exam when questions are loaded
       } else {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          // Normalize possible shapes from backend/Gemini
-          // Helpers to clean placeholder decorations from LLM-generated text
-          const stripBracketTag = (t) => typeof t === 'string' ? t.replace(/^\s*\[[^\]]*\]\s*/,'').trim() : t;
-          const stripSample = (t) => typeof t === 'string' ? t.replace(/\bsample\s+question\s+#?\d+\b/ig, '').trim() : t;
-          const stripTopicParen = (t) => typeof t === 'string' ? t.replace(new RegExp(`\s*\(\s*${topic}\s*\)$`, 'i'), '').trim() : t;
-          const stripLeadingLabel = (t) => typeof t === 'string'
-            ? t.replace(/^\s*[\(\[]?[A-Da-d][\)\].:-]?\s+/, '').trim()
-            : (t == null ? '' : String(t));
-          const toStringSafe = (t) => (t == null ? '' : String(t));
-          const cleanQ = (t) => stripSample(stripBracketTag(toStringSafe(t)));
-          const cleanOpt = (t) => stripLeadingLabel(stripTopicParen(toStringSafe(t)));
-
-          const deriveCorrectIndex = (qObj, opts) => {
-            const cand = qObj.correctAnswer ?? qObj.answerIndex ?? qObj.correct ?? qObj.answer ?? qObj.key ?? qObj.correctOption ?? qObj.correct_choice ?? qObj.solution;
-            if (typeof cand === 'number' && Number.isFinite(cand)) {
-              // If value looks 1-based (common in datasets), convert to 0-based
-              if (cand >= 1 && cand <= opts.length) return cand - 1;
-              return cand;
-            }
-            if (typeof cand === 'string') {
-              const s = cand.trim();
-              // Letter A-D
-              if (/^[A-D]$/i.test(s)) return s.toUpperCase().charCodeAt(0) - 65;
-              // Match by option text
-              const byText = opts.findIndex(o => (o ?? '').toString().trim().toLowerCase() === cleanOpt(s).toLowerCase());
-              if (byText !== -1) return byText;
-              // Numeric in string
-              const num = parseInt(s, 10);
-              if (!isNaN(num)) {
-                if (num >= 1 && num <= opts.length) return num - 1; // 1-based -> 0-based
-                return num;
-              }
-            }
-            return undefined;
-          };
-
-          const normalized = data
-            .map((q, idx) => {
-              const options = (q.options ?? q.choices ?? q.answers ?? []).map(cleanOpt);
-              return {
-                id: q.id ?? q.questionId ?? `q-${idx + 1}`,
-                question: cleanQ(q.question ?? q.prompt ?? q.text ?? ''),
-                options,
-                correctAnswer: deriveCorrectIndex(q, options)
-              };
-            })
-            .filter(q => q.question && Array.isArray(q.options) && q.options.length > 0);
-          setQuestions(normalized);
-        } else {
-          console.warn('MCQ API returned unexpected shape');
-          setQuestions([]);
-        }
+        setQuestions([]);
       }
     } catch (error) {
       console.error('Failed to load questions:', error);
       setQuestions([]);
+      setExamStarted(false);
+      alert('Failed to load practice questions. Please try again.');
     }
     setLoading(false);
   };
@@ -257,96 +251,36 @@ export default function MCQs() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      // Helper to derive correct index at runtime as a fallback
-      const normalizeOptText = (t) => (t == null ? '' : String(t))
-        .trim()
-        .replace(/^\s*[\(\[]?[A-Da-d][\)\].:-]?\s+/, '')
-        .toLowerCase();
-      const getCorrectIndex = (q) => {
-        const cand = q.correctAnswer ?? q.answerIndex ?? q.correct ?? q.answer ?? q.key ?? q.correctOption ?? q.correct_choice ?? q.solution;
-        if (typeof cand === 'number' && Number.isFinite(cand)) return cand;
-        if (typeof cand === 'string') {
-          const s = cand.trim();
-          if (/^[A-D]$/i.test(s)) return s.toUpperCase().charCodeAt(0) - 65;
-          const byText = (q.options || []).findIndex(o => normalizeOptText(o) === normalizeOptText(s));
-          if (byText !== -1) return byText;
-          const num = parseInt(s, 10);
-          if (!isNaN(num)) return num;
-        }
-        return undefined;
-      };
-
-      // Calculate score dynamically with fallback
+      // Practice mode - calculate score
       let correctAnswers = 0;
       questions.forEach(question => {
-        const sel = selectedAnswers[question.id];
-        const corr = getCorrectIndex(question);
-        try {
-          // Diagnostic logs to trace scoring issues
-          // eslint-disable-next-line no-console
-          console.debug('[MCQ Submit] Q:', question.question, '\nOptions:', question.options, '\nSelected:', sel, '\nResolvedCorrect:', corr);
-        } catch {}
-        if (typeof sel === 'number' && typeof corr === 'number' && sel === corr) {
+        const selectedIndex = selectedAnswers[question.id];
+        if (typeof selectedIndex === 'number' && selectedIndex === question.correctAnswer) {
           correctAnswers++;
         }
       });
+      
       setScore(correctAnswers);
       setResult({ score: correctAnswers, total: questions.length });
-      
-      // Persist MCQ session to backend history
-      try {
-        const token = localStorage.getItem('token') || localStorage.getItem('accessToken');
-        const sp = new URLSearchParams(location.search);
-        const state = (location && location.state) || {};
-        const topic = sp.get('topic') || state.topic || 'General';
-        const level = sp.get('level') || state.level || 'Mixed';
-        const totalQuestions = questions.length;
-        const minutesSpent = 0; // optional: track timer if needed
-        const questionsPayload = questions.map((q) => ({
-          question: q.question,
-          userAnswer: selectedAnswers[q.id],
-          correctAnswer: q.correctAnswer,
-          isCorrect: selectedAnswers[q.id] === q.correctAnswer,
-          technology: topic,
-        }));
-
-        await fetch('/api/candidate/practice/save-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            type: 'mcq',
-            technologies: [topic],
-            difficulty: level,
-            score: correctAnswers,
-            totalQuestions,
-            timeSpent: minutesSpent,
-            questions: questionsPayload,
-            feedback: '',
-            completedAt: new Date().toISOString()
-          })
-        });
-      } catch (e) {
-        console.error('Failed to save MCQ session:', e);
-      }
-      
       setIsSubmitted(true);
       setShowSuccessPopup(true);
       
-      // Auto-close popup, exit fullscreen and redirect after 5 seconds
+      // Save practice session to backend
+      try {
+        await savePracticeSession(correctAnswers, questions.length);
+      } catch (error) {
+        console.error('Failed to save practice session:', error);
+      }
+      
+      // Auto-redirect after 3 seconds
       setTimeout(() => {
         setShowSuccessPopup(false);
-        exitFullscreen();
-        setExamStarted(false);
-        stopWebcam(); // Stop webcam when exam ends
-        navigate('/candidate/partices');
-      }, 5000);
+        navigate('/candidate/partices', { replace: true });
+      }, 3000);
       
     } catch (error) {
-      console.error('Failed to submit answers:', error);
+      console.error('Submit error:', error);
+      alert('Failed to submit. Please try again.');
     }
     setLoading(false);
   };
@@ -355,6 +289,58 @@ export default function MCQs() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Save practice session to backend
+  const savePracticeSession = async (correctAnswers, totalQuestions) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.warn('No token found, skipping session save');
+        return;
+      }
+
+      const percentage = Math.round((correctAnswers / totalQuestions) * 100);
+      
+      // Prepare questions with user answers for history
+      const questionsWithAnswers = questions.map(q => ({
+        question: q.question,
+        options: Array.isArray(q.options) ? q.options : [],
+        correctAnswer: q.options && q.options[q.correctAnswer] ? q.options[q.correctAnswer] : 'Unknown',
+        userAnswer: selectedAnswers[q.id] !== undefined && q.options && q.options[selectedAnswers[q.id]] 
+          ? q.options[selectedAnswers[q.id]] 
+          : 'Not answered',
+        isCorrect: selectedAnswers[q.id] === q.correctAnswer,
+        technology: q.technology || 'General',
+        questionType: 'mcq'
+      }));
+
+      const sessionData = {
+        type: 'mcq',
+        difficulty: 'Medium', // Default difficulty
+        technologies: [...new Set(questions.map(q => q.technology || 'General'))],
+        score: correctAnswers,
+        totalQuestions: totalQuestions,
+        correctAnswers: correctAnswers,
+        percentage: percentage,
+        timeSpent: Math.ceil((1800 - timeLeft) / 60), // Time spent in minutes
+        questions: questionsWithAnswers
+      };
+
+      console.log('💾 Saving practice session:', sessionData);
+      
+      const response = await axios.post('/api/candidate/practice/save-session', sessionData, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('✅ Practice session saved successfully:', response.data);
+    } catch (error) {
+      console.error('Error saving practice session:', error);
+      throw error;
+    }
   };
 
   const getRating = (percentage) => {
@@ -387,6 +373,7 @@ export default function MCQs() {
       });
       setWebcamStream(stream);
       setWebcamPermission('granted');
+      setCameraPermissionGranted(true);
       
       // Create video element for webcam preview in header
       setTimeout(() => {
@@ -400,10 +387,25 @@ export default function MCQs() {
     } catch (error) {
       console.error('Webcam permission denied:', error);
       setWebcamPermission('denied');
+      setCameraPermissionGranted(false);
       
       // Show warning but allow test to continue
       alert('⚠️ Webcam access denied. The test will continue but may be monitored through other means.');
     }
+  };
+
+  const requestCameraPermission = async () => {
+    setIsInitializingProctor(true);
+    await requestWebcamPermission();
+    setIsInitializingProctor(false);
+  };
+
+  const hideDashboardLayout = () => {
+    // Function to hide dashboard layout during exam
+    const dashboardElements = document.querySelectorAll('.dashboard-layout, .sidebar, .header');
+    dashboardElements.forEach(el => {
+      if (el) el.style.display = 'none';
+    });
   };
 
   const stopWebcam = () => {
@@ -422,71 +424,21 @@ export default function MCQs() {
     }));
   };
 
+  // Fullscreen functions
   const enterFullscreen = () => {
-    // Hide dashboard layout and show only test content
-    const dashboardLayout = document.querySelector('.dashboard-layout');
-    const sidebar = document.querySelector('.sidebar');
-    const header = document.querySelector('.dashboard-header');
-    
-    if (dashboardLayout) dashboardLayout.style.display = 'none';
-    if (sidebar) sidebar.style.display = 'none';
-    if (header) header.style.display = 'none';
-    
-    // Make test container full screen
-    const testContainer = document.querySelector('.mcq-test-fullscreen');
-    if (testContainer) {
-      testContainer.style.position = 'fixed';
-      testContainer.style.top = '0';
-      testContainer.style.left = '0';
-      testContainer.style.width = '100vw';
-      testContainer.style.height = '100vh';
-      testContainer.style.zIndex = '9999';
-      // Do not force background; let CSS theme control it
-      testContainer.style.background = '';
-    }
-    
-    // Also try browser fullscreen
-    const elem = document.documentElement;
-    if (elem.requestFullscreen) {
-      elem.requestFullscreen();
-    } else if (elem.webkitRequestFullscreen) {
-      elem.webkitRequestFullscreen();
-    } else if (elem.msRequestFullscreen) {
-      elem.msRequestFullscreen();
+    try {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+      } else if (document.documentElement.webkitRequestFullscreen) {
+        document.documentElement.webkitRequestFullscreen();
+      } else if (document.documentElement.msRequestFullscreen) {
+        document.documentElement.msRequestFullscreen();
+      }
+    } catch (error) {
+      console.warn('Fullscreen not supported:', error);
     }
   };
 
-  const exitFullscreen = () => {
-    // Restore dashboard layout
-    const dashboardLayout = document.querySelector('.dashboard-layout');
-    const sidebar = document.querySelector('.sidebar');
-    const header = document.querySelector('.dashboard-header');
-    
-    if (dashboardLayout) dashboardLayout.style.display = '';
-    if (sidebar) sidebar.style.display = '';
-    if (header) header.style.display = '';
-    
-    // Reset test container styles
-    const testContainer = document.querySelector('.mcq-test-fullscreen');
-    if (testContainer) {
-      testContainer.style.position = '';
-      testContainer.style.top = '';
-      testContainer.style.left = '';
-      testContainer.style.width = '';
-      testContainer.style.height = '';
-      testContainer.style.zIndex = '';
-      testContainer.style.background = '';
-    }
-    
-    // Exit browser fullscreen
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
-    }
-  };
 
   const disableSecurityFeatures = () => {
     // Disable keyboard shortcuts and copy/paste
@@ -623,28 +575,17 @@ export default function MCQs() {
           ),
           document.body
         )}
-        {!fsStarted && (
-          <div style={{
-            position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.35)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
-          }}>
-            <div style={{ background: '#0f172a', border: '1px solid #1f2937', borderRadius: 12, padding: 24, width: 420, textAlign: 'center' }}>
-              <h2 style={{ color: '#e5e7eb', marginTop: 0 }}>Ready to start?</h2>
-              <p style={{ color: '#9ca3af', marginTop: 4, marginBottom: 16 }}>Click below to enter fullscreen and begin your test.</p>
-              <button
-                onClick={() => { enterFullscreen(); setFsStarted(true); }}
-                style={{ padding: '12px 18px', borderRadius: 10, background: '#3b82f6', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer' }}
-              >Start Test (Fullscreen)</button>
-            </div>
-          </div>
-        )}
-        <div className="simple-mcq-container" style={{ width: '100vw', maxWidth: '100vw', margin: 0, padding: 0, position: 'relative', height: '100vh', boxSizing: 'border-box' }}>
-          <div className="simple-mcq-card" style={{ background: '#0b1220', border: '1px solid #1f2937', borderRadius: 0, overflow: 'visible', position: 'relative', height: '100%', width: '100vw', display: 'flex', flexDirection: 'column' }}>
+        <div className="simple-mcq-container" style={{ width: '100%', maxWidth: '100%', margin: 0, padding: 0, position: 'relative', height: 'calc(100vh - 80px)', boxSizing: 'border-box' }}>
+          <div className="simple-mcq-card" style={{ background: '#0b1220', border: '1px solid #1f2937', borderRadius: 8, overflow: 'visible', position: 'relative', height: '100%', width: '100%', display: 'flex', flexDirection: 'column' }}>
             {/* Header */}
-            <div className="simple-mcq-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, background: '#111827', borderBottom: '1px solid #1f2937' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <img src="/logo.png" alt="Site Logo" style={{ width: 22, height: 22, objectFit: 'contain' }} />
-                <h1 style={{ margin: 0, color: '#e5e7eb', fontSize: 18, fontWeight: 700 }}>MCQ Practice Test</h1>
+            <div className="simple-mcq-header" ref={headerRef} style={{ background: '#0b1426', borderBottom: '1px solid #1f2937', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, minHeight: '60px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 8, height: 8, background: '#10b981', borderRadius: '50%', flexShrink: 0 }}></div>
+                  <h1 style={{ color: '#e5e7eb', fontWeight: 700, fontSize: 18, margin: 0, whiteSpace: 'nowrap' }}>
+                    MCQ Practice Test
+                  </h1>
+                </div>
               </div>
               {timerEnabled ? (
                 <div style={{ color: '#e5e7eb', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
@@ -944,6 +885,133 @@ export default function MCQs() {
     return (
       <div className="flex justify-center items-center h-64">
         <div className="text-lg">Loading MCQs...</div>
+      </div>
+    );
+  }
+
+  // Pre-exam screen for test mode
+  if (isTestMode && !examStarted && questions.length > 0) {
+    return (
+      <div className="mcq-pre-exam-screen" style={{ color: '#e5e7eb' }}>
+        <div className="mcq-pre-exam-content">
+          <div style={{ fontSize: '48px', marginBottom: '24px' }}>🔒</div>
+          <h1 style={{ fontSize: '32px', marginBottom: '16px', color: '#ef4444' }}>
+            SECURE EXAM MODE
+          </h1>
+          <h2 style={{ fontSize: '24px', marginBottom: '32px', color: '#e5e7eb' }}>
+            {companyOrRecruiter}
+          </h2>
+          
+          <div style={{ textAlign: 'left', marginBottom: '32px', lineHeight: '1.6' }}>
+            <h3 style={{ color: '#f59e0b', marginBottom: '16px' }}>⚠️ Security Notice:</h3>
+            <ul style={{ paddingLeft: '20px', color: '#cbd5e1' }}>
+              <li>This exam will enter fullscreen mode</li>
+              <li>Camera monitoring will be activated</li>
+              <li>Tab switching is limited to {MAX_TAB_SWITCHES} times</li>
+              <li>Right-click and developer tools are disabled</li>
+              <li>Maximum {MAX_WARNINGS} security warnings allowed</li>
+              <li>Exam will auto-terminate on violations</li>
+            </ul>
+          </div>
+
+          <div style={{ 
+            background: '#0f172a',
+            padding: '16px',
+            borderRadius: '8px',
+            marginBottom: '32px',
+            border: '1px solid #1e293b'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span>📝 Questions:</span>
+              <span>{questions.length}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <span>⏱️ Time Limit:</span>
+              <span>{Math.floor(timeLeft / 60)} minutes</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>📹 Proctoring:</span>
+              <span style={{ color: cameraPermissionGranted ? '#10b981' : '#f59e0b' }}>
+                {cameraPermissionGranted ? 'Ready' : 'Initializing...'}
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setExamStarted(true);
+              if (!cameraPermissionGranted) {
+                requestCameraPermission();
+              }
+            }}
+            disabled={isInitializingProctor}
+            style={{
+              background: cameraPermissionGranted ? '#ef4444' : '#6b7280',
+              color: 'white',
+              border: 'none',
+              padding: '16px 32px',
+              borderRadius: '8px',
+              fontSize: '18px',
+              fontWeight: '600',
+              cursor: cameraPermissionGranted ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              margin: '0 auto'
+            }}
+          >
+            <span>🚀</span>
+            {isInitializingProctor ? 'Initializing...' : 'START SECURE EXAM'}
+          </button>
+
+          {!cameraPermissionGranted && (
+            <p style={{ 
+              marginTop: '16px', 
+              fontSize: '14px', 
+              color: '#f59e0b' 
+            }}>
+              Please allow camera access to start the exam
+            </p>
+          )}
+
+          {/* Debug buttons for testing */}
+          <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
+            <button
+              onClick={() => {
+                console.log('🔧 Testing dashboard hide...');
+                hideDashboardLayout();
+              }}
+              style={{
+                background: '#6b7280',
+                color: 'white',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+            >
+              Test Hide Dashboard
+            </button>
+            <button
+              onClick={() => {
+                console.log('🔧 Testing camera...');
+                requestCameraPermission();
+              }}
+              style={{
+                background: '#6b7280',
+                color: 'white',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                cursor: 'pointer'
+              }}
+            >
+              Test Camera
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -1272,6 +1340,7 @@ export default function MCQs() {
         )}
       </div>
     )}
+    
     </div>
   );
 }
